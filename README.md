@@ -50,25 +50,105 @@ Along the way I also:
 
 ## Quick start
 
+The pipeline is set up in **5 steps**, each with pinned versions to avoid the failures I hit during the 2-day debug. **[uv](https://github.com/astral-sh/uv) is the recommended venv+package manager** — it handles resolution much better than `venv` + `pip` and is what the docs assume.
+
+### What you'll be installing (pinned)
+
+| Component | Version | Why this version |
+|---|---|---|
+| Python | 3.12.13 | Required by TheRock gfx1151 wheels |
+| PyTorch (TheRock gfx1151 build) | `2.10.0+rocm7.13.0a20260513` | PyTorch.org's `rocm7.1` wheels SIGSEGV on Strix Halo (Issue #2991). TheRock gfx1151 ships the VGPR fix |
+| ROCm / HIP | 7.13 | First line with native gfx1151 support; **do NOT set `HSA_OVERRIDE_GFX_VERSION`** on this version |
+| numpy | 1.26.4 | **Force-downgraded** for deepfilternet + torch 2.10 compat |
+| packaging | 23.2 | **Force-downgraded** for deepfilternet 0.5.6 |
+| speech-to-speech | 0.2.9 | Pipeline framework |
+| funasr | 1.3.9 | Paraformer-zh STT — Chinese CER **1.95 %**, **120× real-time** on GPU |
+| qwen-tts | 0.1.1 | Qwen3-TTS backend |
+| faster-qwen3-tts | 0.2.6 | TTS inference engine (ROCm gfx1151 verified) |
+| deepfilternet | 0.5.6 | Audio denoising — **+ 1-line patch** to `df/io.py:9` for TheRock torchaudio 2.10 (one-time after every reinstall) |
+| hf-transfer | 0.1.9 | HuggingFace fast downloader — **mandatory** for the TTS model download |
+
+Skip: **flash-attn** (gfx1151 has no upstream HIP kernel — full reasoning in [docs/03 §2.a](docs/03-speech-to-speech-status.md)).
+
+### Step 1 — ROCm + PyTorch (TheRock gfx1151)
+
 ```bash
-# 1. Install ROCm + PyTorch — see docs/01
-# 2. Stand up an OpenAI-compatible LLM backend (default: llama-swap at http://127.0.0.1:8101/v1)
-# 3. Clone this repo
-git clone https://github.com/kamjin3086/reachy-mini-sts-pipeline.git
-cd reachy-mini-sts-pipeline
+# Create venv with uv
+uv venv ~/.venvs/sts --python 3.12
+source ~/.venvs/sts/bin/activate
 
-# 4. Install speech-to-speech and its dependencies
-pip install "speech-to-speech[paraformer]" funasr qwen-tts faster-qwen3-tts hf_transfer
-
-# 5. Adjust --model_name in the start script to a model your llama-swap knows about
-$EDITOR scripts/sts_start.sh
-
-# 6. Launch
-./scripts/sts_start.sh
-# → WebSocket server listens on ws://0.0.0.0:8765/v1/realtime
+# Install PyTorch from TheRock gfx1151 index — NOT PyTorch.org
+uv pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ \
+  torch torchaudio torchvision
 ```
 
-For Reachy Mini integration, also see the forked app: [kamjin3086/reachy_mini_conversation_app](https://github.com/kamjin3086/reachy_mini_conversation_app).
+Verify:
+
+```bash
+python3 -c "
+import torch
+assert torch.cuda.is_available(), 'ROCm not working'
+assert 'gfx1151' in torch.cuda.get_arch_list(), 'Wrong wheel index'
+x = torch.randn(100, 100, device='cuda')
+print('ROCm + PyTorch OK:', torch.cuda.get_device_name(0))
+"
+```
+
+Full ROCm troubleshooting: [docs/01 — ROCm gfx1151 PyTorch Install](docs/01-rocm-gfx1151-pytorch-install.md).
+
+### Step 2 — STT, TTS, denoise
+
+```bash
+# Main pipeline + STT/TTS backends (skip deepfilternet — installed separately below)
+uv pip install "speech-to-speech[paraformer]" funasr qwen-tts \
+  faster-qwen3-tts hf-transfer
+
+# Audio denoising — needs two force-downgrades to coexist with torch 2.10
+uv pip install "deepfilternet==0.5.6"
+# Then apply the torchaudio 2.10 compat patch (one-time, after every reinstall).
+# See docs/03 §7 for the sed command.
+```
+
+**Why these picks** (full comparison table in [docs/02](docs/02-speech-to-speech-install.md)):
+
+- **STT: Paraformer-zh** — Chinese CER 1.95 % (vs SenseVoice 2.96 %, faster-whisper 5.14 %), **120× real-time on GPU**, built-in VAD + punctuation
+- **TTS: Qwen3-TTS** — the only TTS I verified working on ROCm gfx1151. Kokoro works but is CPU-only and English-leaning
+- **Denoise: DeepFilterNet 0.5.6** — best quality; RNNoise is faster but lower quality
+
+### Step 3 — LLM backend
+
+The pipeline expects an OpenAI-compatible endpoint at `http://127.0.0.1:8101/v1` (llama-swap default). After benchmarking **7 models**, `Gemma-4-E4B-instruct` is the steady-state TTFT champion (50 ms). Full numbers in [docs/03 §Tuning §1](docs/03-speech-to-speech-status.md).
+
+### Step 4 — Launch
+
+```bash
+git clone https://github.com/kamjin3086/reachy-mini-sts-pipeline.git
+cd reachy-mini-sts-pipeline
+$EDITOR scripts/sts_start.sh   # Adjust --model_name to a model your llama-swap knows
+./scripts/sts_start.sh
+# → WebSocket: ws://0.0.0.0:8765/v1/realtime
+```
+
+`sts_start.sh` sets these ROCm env vars (do **not** set `HSA_OVERRIDE_GFX_VERSION` — see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)):
+
+```bash
+export GPU_MAX_ALLOC_PERCENT=100                    # Full UMA allocation
+export GPU_MAX_HEAP_SIZE=100                        # Cap HIP heap
+export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1    # AOTriton perf
+```
+
+### Step 5 — Reachy Mini integration (optional)
+
+```bash
+# 1. Install Reachy Mini Control (macOS) from Pollen Robotics
+# 2. Fork the conversation app for live editing:
+git clone https://github.com/kamjin3086/reachy_mini_conversation_app.git
+cd reachy_mini_conversation_app
+pip install -e .   # editable install — source edits take effect live (see docs/04)
+# 3. In Reachy Mini Control, point the conversation app to ws://<host>:8765/v1/realtime
+```
+
+Steady-state perceived latency: **~1.0 s** (user stops speaking → first synthesized audio).
 
 ## Documentation
 

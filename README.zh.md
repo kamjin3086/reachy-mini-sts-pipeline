@@ -50,25 +50,105 @@
 
 ## 快速开始
 
+整个管道分 **5 步**搭建，每步都锁了版本号（避免我那 2 天调试踩的坑）。**[uv](https://github.com/astral-sh/uv) 是推荐的 venv + 包管理器** —— 解析能力远好于 `venv` + `pip`，下面的步骤都默认用 uv。
+
+### 装什么（版本锁）
+
+| 组件 | 版本 | 为什么是这个版本 |
+|---|---|---|
+| Python | 3.12.13 | TheRock gfx1151 wheels 必需 |
+| PyTorch（TheRock gfx1151 build）| `2.10.0+rocm7.13.0a20260513` | PyTorch.org 的 `rocm7.1` wheels 在 Strix Halo 上 SIGSEGV（Issue #2991）。TheRock gfx1151 带了 VGPR 修复 |
+| ROCm / HIP | 7.13 | 第一个原生支持 gfx1151 的版本。**此版本不要设 `HSA_OVERRIDE_GFX_VERSION`** |
+| numpy | 1.26.4 | **强制降级**，否则与 deepfilternet + torch 2.10 不兼容 |
+| packaging | 23.2 | **强制降级**，deepfilternet 0.5.6 要求 |
+| speech-to-speech | 0.2.9 | 管道框架 |
+| funasr | 1.3.9 | Paraformer-zh STT —— 中文 CER **1.95%**，**120× 实时**（GPU）|
+| qwen-tts | 0.1.1 | Qwen3-TTS 后端 |
+| faster-qwen3-tts | 0.2.6 | TTS 推理引擎（ROCm gfx1151 已验证）|
+| deepfilternet | 0.5.6 | 降噪 —— **+ 1 行 patch**（`df/io.py:9`，适配 TheRock torchaudio 2.10；每次重装后要重做）|
+| hf-transfer | 0.1.9 | HuggingFace 高速下载 —— **TTS 模型下载必需** |
+
+跳过：**flash-attn**（gfx1151 上游无 HIP kernel，完整理由见 [docs/03 §2.a](docs/03-speech-to-speech-status.md)）。
+
+### 第 1 步 —— ROCm + PyTorch（TheRock gfx1151）
+
 ```bash
-# 1. 装 ROCm + PyTorch（详见 docs/01）
-# 2. 准备 llama-swap 或 OpenAI 兼容 LLM 后端（默认 http://127.0.0.1:8101/v1）
-# 3. 克隆本仓库
+# 用 uv 创建 venv
+uv venv ~/.venvs/sts --python 3.12
+source ~/.venvs/sts/bin/activate
+
+# 从 TheRock gfx1151 索引装 PyTorch —— 不是 PyTorch.org
+uv pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ \
+  torch torchaudio torchvision
+```
+
+验证：
+
+```bash
+python3 -c "
+import torch
+assert torch.cuda.is_available(), 'ROCm 没工作'
+assert 'gfx1151' in torch.cuda.get_arch_list(), '用错 wheel 索引了'
+x = torch.randn(100, 100, device='cuda')
+print('ROCm + PyTorch OK:', torch.cuda.get_device_name(0))
+"
+```
+
+完整 ROCm 排错：[docs/01 — ROCm gfx1151 PyTorch 安装](docs/01-rocm-gfx1151-pytorch-install.md)。
+
+### 第 2 步 —— STT + TTS + 降噪
+
+```bash
+# 主管道 + STT/TTS 后端（降噪单独装，见下）
+uv pip install "speech-to-speech[paraformer]" funasr qwen-tts \
+  faster-qwen3-tts hf-transfer
+
+# 降噪 —— 需要两个强制降级才能与 torch 2.10 共存
+uv pip install "deepfilternet==0.5.6"
+# 然后打 torchaudio 2.10 兼容 patch（一次性，每次重装后要重做）
+# sed 命令见 docs/03 §7
+```
+
+**为什么选这些**（完整对比表见 [docs/02](docs/02-speech-to-speech-install.md)）：
+
+- **STT: Paraformer-zh** —— 中文 CER 1.95%（对比 SenseVoice 2.96%、faster-whisper 5.14%），**120× 实时**（GPU），自带 VAD + 标点恢复
+- **TTS: Qwen3-TTS** —— 唯一在 ROCm gfx1151 上验证可用的 TTS。Kokoro 能用但是 CPU only + 偏英文
+- **降噪: DeepFilterNet 0.5.6** —— 质量最高；RNNoise 更快但质量差
+
+### 第 3 步 —— LLM 后端
+
+管道默认连 `http://127.0.0.1:8101/v1`（llama-swap 默认端口）。实测 **7 个模型** 后，`Gemma-4-E4B-instruct` 是稳态 TTFT 之最（50 ms）。完整数据见 [docs/03 §调优 §1](docs/03-speech-to-speech-status.md)。
+
+### 第 4 步 —— 启动
+
+```bash
 git clone https://github.com/kamjin3086/reachy-mini-sts-pipeline.git
 cd reachy-mini-sts-pipeline
-
-# 4. 装 speech-to-speech + 可选依赖
-pip install "speech-to-speech[paraformer]" funasr qwen-tts faster-qwen3-tts hf_transfer
-
-# 5. 编辑启动脚本里的 --model_name 为你 llama-swap 中可用的模型
-$EDITOR scripts/sts_start.sh
-
-# 6. 启动
+$EDITOR scripts/sts_start.sh   # 把 --model_name 改成你 llama-swap 里有的模型
 ./scripts/sts_start.sh
-# → WebSocket 服务监听 ws://0.0.0.0:8765/v1/realtime
-
-# 7. 在 Reachy Mini Control 桌面 App 里填入 IP:端口，连接，开始对话
+# → WebSocket: ws://0.0.0.0:8765/v1/realtime
 ```
+
+`sts_start.sh` 设了这些 ROCm 环境变量（**不要**设 `HSA_OVERRIDE_GFX_VERSION`，见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)）：
+
+```bash
+export GPU_MAX_ALLOC_PERCENT=100                    # 放行 UMA 全量分配
+export GPU_MAX_HEAP_SIZE=100                        # 限制 HIP heap
+export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1    # AOTriton 性能
+```
+
+### 第 5 步 —— Reachy Mini 集成（可选）
+
+```bash
+# 1. 在 macOS 上从 Pollen Robotics 装 Reachy Mini Control
+# 2. Fork 对话 app 以便实时编辑：
+git clone https://github.com/kamjin3086/reachy_mini_conversation_app.git
+cd reachy_mini_conversation_app
+pip install -e .   # 可编辑模式 —— 源码改动实时生效（见 docs/04）
+# 3. 在 Reachy Mini Control 里把对话 app 指向 ws://<host>:8765/v1/realtime
+```
+
+稳态感知延迟：**~1.0 秒**（用户停嘴 → 听到第一声合成音）。
 
 ## 文档索引
 
