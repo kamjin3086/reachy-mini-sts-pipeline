@@ -115,9 +115,14 @@ uv pip install "deepfilternet==0.5.6"
 - **TTS: Qwen3-TTS** — the only TTS I verified working on ROCm gfx1151. Kokoro works but is CPU-only and English-leaning
 - **Denoise: DeepFilterNet 0.5.6** — best quality; RNNoise is faster but lower quality
 
-### Step 3 — LLM backend
+### Step 3 — LLM backend (llama-swap + lemonade)
 
-The pipeline expects any OpenAI-compatible LLM endpoint. Run a local server (e.g. `llama-server` from llama.cpp, vLLM, SGLang, or any other) and point the pipeline at it. The default URL in `sts_start.sh` is `http://127.0.0.1:8101/v1` — adjust `--responses_api_base_url` to match yours.
+The default setup uses two layers:
+
+- **llama-swap** — OpenAI-compatible HTTP proxy at `http://127.0.0.1:8101/v1` that does fast model switching. This is what the pipeline points at.
+- **lemonade** ([lemonade-sdk/lemonade](https://github.com/lemonade-sdk/lemonade)) — AMD-optimized LLM inference backend that llama-swap delegates to. Supports Strix Halo iGPU (gfx1151) and Ryzen AI NPU via ROCm/Vulkan, and is what makes local inference fast on this hardware.
+
+If you swap either layer (e.g. use `llama-server` from llama.cpp instead of lemonade, or skip the proxy entirely), adjust `--responses_api_base_url` in `sts_start.sh` accordingly.
 
 After benchmarking **7 models**, `Gemma-4-E4B-instruct` is the steady-state TTFT champion (50 ms). Full numbers in [docs/03 §Tuning §1](docs/03-speech-to-speech-status.md).
 
@@ -171,7 +176,8 @@ After benchmarking 7 LLM models, **Gemma-4-E4B-instruct** is the steady-state TT
 | ASR | Paraformer-zh (FunASR) | SenseVoice, faster-whisper | Best Chinese CER (1.95%) |
 | LLM | Gemma-4-E4B-instruct | GPT-OSS-20B, Qwen3.6-35B-A3B | Steady-state TTFT king |
 | TTS | Qwen3-TTS (CustomVoice) | Kokoro, CosyVoice 2 | ROCm compatibility verified |
-| LLM server | Any OpenAI-compatible (e.g. `llama-server`, vLLM, SGLang) | — | The pipeline only needs an OpenAI-compatible endpoint |
+| LLM proxy | llama-swap | vLLM, SGLang | Lightweight OpenAI-compatible proxy with fast model switching |
+| LLM inference backend | lemonade (lemonade-sdk/lemonade) | llama-server (llama.cpp ROCm) | AMD-optimized for Strix Halo iGPU + NPU; has gfx1151 ROCm + Vulkan paths |
 | Denoising | DeepFilterNet 0.5.6 | RNNoise | High quality, patched for torchaudio 2.10 |
 
 ## Known issues & workarounds
@@ -193,7 +199,8 @@ Full list: [docs/03 §Known Issues](docs/03-speech-to-speech-status.md), [TROUBL
 - [facebookresearch/speech-to-speech](https://github.com/facebookresearch/speech-to-speech) — Core STS pipeline
 - [FunASR/Paraformer](https://github.com/modelscope/FunASR) — Chinese ASR
 - [Qwen3-TTS](https://huggingface.co/Qwen) — TTS
-- [llama-server](https://github.com/ggml-org/llama.cpp) (or any OpenAI-compatible LLM server) — LLM backend
+- [llama-swap](https://github.com/mostlygeek/llama-swap) — OpenAI-compatible LLM proxy / model switcher
+- [lemonade-sdk/lemonade](https://github.com/lemonade-sdk/lemonade) — AMD-optimized local AI server (Strix Halo iGPU + Ryzen AI NPU)
 - [AMD TheRock](https://github.com/ROCm/TheRock) — gfx1151 PyTorch wheels
 - [Pollen Robotics](https://www.pollen-robotics.com/reachy-mini/) — Reachy Mini hardware
 - [Hugging Face — Local Reachy Mini Conversation](https://huggingface.co/blog/local-reachy-mini-conversation) — Original inspiration

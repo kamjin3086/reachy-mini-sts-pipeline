@@ -115,9 +115,14 @@ uv pip install "deepfilternet==0.5.6"
 - **TTS: Qwen3-TTS** —— 唯一在 ROCm gfx1151 上验证可用的 TTS。Kokoro 能用但是 CPU only + 偏英文
 - **降噪: DeepFilterNet 0.5.6** —— 质量最高；RNNoise 更快但质量差
 
-### 第 3 步 —— LLM 后端
+### 第 3 步 —— LLM 后端（llama-swap + lemonade）
 
-管道只需要一个 OpenAI 兼容的 LLM 端点。在本地起一个 LLM server（`llama-server`（llama.cpp 自带）、vLLM、SGLang 或任何其他），把管道指向它即可。`sts_start.sh` 默认的 URL 是 `http://127.0.0.1:8101/v1` —— 按需调整 `--responses_api_base_url`。
+默认配置分两层：
+
+- **llama-swap** —— OpenAI 兼容的 HTTP 代理，监听 `http://127.0.0.1:8101/v1`，做模型切换。这是管道连的端点
+- **lemonade**（[lemonade-sdk/lemonade](https://github.com/lemonade-sdk/lemonade)）—— AMD 优化的 LLM 推理后端，llama-swap 把请求转给它。对 Strix Halo iGPU（gfx1151）和 Ryzen AI NPU 有专门的 ROCm/Vulkan 加速
+
+要换其中任何一层（比如用 `llama-server` 替 lemonade，或干脆不代理），相应调整 `sts_start.sh` 的 `--responses_api_base_url`。
 
 实测 **7 个模型** 后，`Gemma-4-E4B-instruct` 是稳态 TTFT 之最（50 ms）。完整数据见 [docs/03 §调优 §1](docs/03-speech-to-speech-status.md)。
 
@@ -171,7 +176,8 @@ python3 scripts/bench_llm_models.py
 | ASR | Paraformer-zh (FunASR) | SenseVoice, faster-whisper | 中文 CER 1.95% 最优 |
 | LLM | Gemma-4-E4B-instruct | GPT-OSS-20B, Qwen3.6-35B-A3B | 稳态 TTFT 之王 |
 | TTS | Qwen3-TTS (CustomVoice) | Kokoro, CosyVoice 2 | ROCm 兼容已验证 |
-| LLM server | 任何 OpenAI 兼容 server（如 `llama-server`、vLLM、SGLang） | — | 管道只需要 OpenAI 兼容端点 |
+| LLM 代理 | llama-swap | vLLM, SGLang | 轻量 OpenAI 兼容代理，模型切换快 |
+| LLM 推理后端 | lemonade（lemonade-sdk/lemonade） | llama-server（llama.cpp ROCm） | AMD 为 Strix Halo iGPU + NPU 优化；有 gfx1151 ROCm + Vulkan 路径 |
 | 降噪 | DeepFilterNet 0.5.6 | RNNoise | 高质量、已 patch 兼容 |
 
 ## 已知问题与 workaround
@@ -193,7 +199,8 @@ python3 scripts/bench_llm_models.py
 - [facebookresearch/speech-to-speech](https://github.com/facebookresearch/speech-to-speech) — 核心 STS 管道
 - [FunASR/Paraformer](https://github.com/modelscope/FunASR) — 中文 ASR
 - [Qwen3-TTS](https://huggingface.co/Qwen) — TTS
-- [llama-server](https://github.com/ggml-org/llama.cpp)（或任何 OpenAI 兼容 LLM server）—— LLM 后端
+- [llama-swap](https://github.com/mostlygeek/llama-swap) —— OpenAI 兼容的 LLM 代理 / 模型切换
+- [lemonade-sdk/lemonade](https://github.com/lemonade-sdk/lemonade) —— AMD 优化的本地 AI server（Strix Halo iGPU + Ryzen AI NPU）
 - [AMD TheRock](https://github.com/ROCm/TheRock) — gfx1151 PyTorch wheels
 - [Pollen Robotics](https://www.pollen-robotics.com/reachy-mini/) — Reachy Mini 硬件
 - [Hugging Face 博客：Local Reachy Mini Conversation](https://huggingface.co/blog/local-reachy-mini-conversation) — 起点灵感

@@ -32,7 +32,8 @@
 | Python | 3.12.13 |
 | PyTorch | 2.10.0+rocm7.13.0a20260513 (TheRock gfx1151 wheels) |
 | ROCm/HIP | 7.13.26183 |
-| LLM 后端 | 本地 llama-swap `http://127.0.0.1:8101/v1` |
+| LLM 后端（代理） | **llama-swap** `http://127.0.0.1:8101/v1`（OpenAI 兼容，模型切换快） |
+| LLM 后端（推理） | **lemonade**（[lemonade-sdk/lemonade](https://github.com/lemonade-sdk/lemonade)）—— AMD 优化，对 Strix Halo iGPU + Ryzen AI NPU 有 gfx1151 ROCm + Vulkan 路径 |
 | 当前 LLM 模型 | `Gemma-4-E4B-instruct` |
 | numpy | 1.26.4（被 deepfilternet 强制降级，torch 仍正常） |
 | DeepFilterNet | 0.5.6（已 patch torchaudio 兼容） |
@@ -89,7 +90,7 @@ speech-to-speech \
 |---|---|---|---|
 | **STT** | 1s 音频 | 0.054s | RTF 18.6x |
 | **STT** | 2s 音频 | 0.062s | RTF 32.4x |
-| **LLM 冷启动 TTFT** | 首次请求 | **16.97s** | llama-swap 把模型加载到 VRAM |
+| **LLM 冷启动 TTFT** | 首次请求 | **16.97s** | lemonade（经 llama-swap）把模型加载到 VRAM |
 | **LLM 稳态 TTFT** | 2+ 次请求 | **0.05s** | KV cache 已暖，**基本无感** |
 | **LLM 稳态吞吐** | 60 tokens | ~37 tok/s | 实时对话可接受 |
 | **TTS TTFA** | 稳态 | ~0.84s | 首次含 CUDA graph 编译（**12-14s**） |
@@ -179,7 +180,7 @@ arecord -f S16_LE -r 16000 -d 3 test.wav
 
 **实测发现**：当前 `Gemma-4-E4B-instruct` 稳态 TTFT 仅 **50ms**——基本无感，不需要换模型。
 
-**LLM 选型实测对比**（2026-06-04，llama-swap 8101 端口，3 prompt 平均）：
+**LLM 选型实测对比**（2026-06-04，llama-swap :8101 → lemonade，3 prompt 平均）：
 
 | 模型 | 冷启动 | 稳态 TTFT | tok/s | 备注 |
 |---|---|---|---|---|
@@ -196,13 +197,13 @@ arecord -f S16_LE -r 16000 -d 3 test.wav
 
 **a) 启用 prompt prefix cache**（推荐）
 
-llama-swap / vLLM 支持相同 system prompt 复用 KV cache。speech-to-speech 每次调用 system prompt 相同，**~30% TTFT 收益**（从 50ms → 35ms，意义不大但聊胜于无）。需要在 llama-swap 端配置。
+lemonade（以及 vLLM 等其他推理后端）支持相同 system prompt 复用 KV cache。speech-to-speech 每次调用 system prompt 相同，**~30% TTFT 收益**（从 50ms → 35ms，意义不大但聊胜于无）。需要在 lemonade / llama-swap 端配置。
 
 **b) 启动时预热 LLM**（推荐）
 
-把 llama-swap 17s 冷启动成本从用户感知路径中移除。完整脚本见 [§2.c](#c-预热-tts--llm--stt消除冷启动)。
+把 lemonade 17s 冷启动成本（经 llama-swap）从用户感知路径中移除。完整脚本见 [§2.c](#c-预热-tts--llm--stt消除冷启动)。
 
-**c) 切换到 vLLM / SGLang**（如果 llama-swap 出现瓶颈）
+**c) 切换到 vLLM / SGLang**（如果 llama-swap + lemonade 出现瓶颈）
 
 吞吐和并发能力可能更强，但 vLLM 在 gfx1151 上的兼容性需要评估。**当前不需要**。
 
@@ -438,7 +439,7 @@ sed -i 's/^from torchaudio.backend.common import AudioMetaData$/try:\n    from t
 
 ### LLM 备选
 
-`llama-swap` 管理的全部模型都可用，编辑 `sts_start.sh` 的 `--model_name`（**改完需重启 pipeline**）。
+llama-swap 注册的全部模型（转给 lemonade 推理）都可用，编辑 `sts_start.sh` 的 `--model_name`（**改完需重启 pipeline**）。
 
 **实测数据**（2026-06-04，3 prompt 平均，稳态）：
 
@@ -494,7 +495,7 @@ speech-to-speech 本身输出到 stdout/stderr。建议重定向：
 nohup ./sts_start.sh > /tmp/sts.log 2>&1 &
 ```
 
-### llama-swap 健康检查
+### LLM 栈健康检查（llama-swap + lemonade）
 
 ```bash
 curl -s http://127.0.0.1:8101/v1/models | jq '.data[].id'
@@ -553,25 +554,11 @@ python3 -c "from df.enhance import init_df; init_df()"
 ### 短期（1-2 周）
 
 - [x] ~~安装 SoX、DeepFilterNet（可选依赖）~~ — DeepFilterNet 已装（含 patch），SoX 未装
-- [x] ~~尝试 `Gemma-4-E2B-instruct` 对比 TTFT 改善~~ — **失败**，3 个变体（instruct / 普通 / thinking）全部 `upstream command exited prematurely`，llama-swap 服务端问题，待配置方修复
-- [x] ~~评估 llama-swap 各模型 TTFT~~ — 7 个模型实测，**当前 E4B-instruct 是稳态 TTFT 最优**，不要换
-- [ ] 加 **LLM 预热** 到 `sts_start.sh`（消除 17s 冷启动）
-- [ ] 评估 `CosyVoice 2` 中文 TTS 质量（需 ROCm 兼容性测试）
-- [ ] 改造 `TTS` 为流式（`non_streaming_mode=False`）
-- [ ] 写一个 OpenAI Realtime API 兼容的 Web 客户端（HTML+JS）
-- [ ] 向 deepfilternet 上游提 issue（torchaudio.backend 兼容性）
-- [ ] 向 llama-swap 维护方提 issue（Gemma-4-E2B 启动失败）
-
-### 中期（1 个月）
-
-- [ ] 部署 Web 客户端，支持浏览器语音对话
-- [ ] 添加可观测性：prometheus metrics / OpenTelemetry
-- [ ] 多用户并发测试：当前 pipeline 是单 session
-- [ ] 调优 llama-swap 推理参数（temperature、repetition_penalty 等）
-
-### 长期
-
-- [ ] 评估升级到 vLLM / SGLang 替代 llama-swap
+- [x] ~~尝试 `Gemma-4-E2B-instruct` 对比 TTFT 改善~~ — **失败**，3 个变体（instruct / 普通 / thinking）全部 `upstream command exited prematurely`，lemonade 后端问题，待配置方修复
+- [x] ~~评估 LLM 各模型 TTFT~~ — 7 个模型实测，**当前 E4B-instruct 是稳态 TTFT 最优**，不要换
+- [ ] 向 lemonade 维护方提 issue（Gemma-4-E2B 启动失败）
+- [ ] 调优 lemonade / llama-swap 推理参数（temperature、repetition_penalty 等）
+- [ ] 评估升级到 vLLM / SGLang 替代 lemonade
 - [ ] ~~探索 ROCm Flash Attention 2/3（性能增益）~~ — **不可行**，gfx1151 无上游支持
 - [ ] ~~评估 aotriton 内核~~ — **无 Python backend**，C++ ops 已注册但运行时缺失
 - [ ] 等待 speech-to-speech 上游修复 MPS bug，移除 monkey-patch
@@ -604,4 +591,5 @@ python3 -c "from df.enhance import init_df; init_df()"
 - ROCm 文档：[01-rocm-gfx1151-pytorch-install.md](./01-rocm-gfx1151-pytorch-install.md)
 - 测试脚本：`/home/kamjin/scripts/bench_sts_pipeline.py`（端到端）、`/home/kamjin/scripts/bench_llm_models.py`（LLM TTFT 对比）
 - 启动脚本：`/home/kamjin/sts_start.sh`
-- llama-swap: `http://127.0.0.1:8101/v1`
+- llama-swap（代理）: `http://127.0.0.1:8101/v1`
+- lemonade（推理后端）: AMD TheRock + Vulkan 路径

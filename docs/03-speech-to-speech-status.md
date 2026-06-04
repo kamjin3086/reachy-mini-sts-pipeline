@@ -32,7 +32,8 @@
 | Python | 3.12.13 |
 | PyTorch | 2.10.0+rocm7.13.0a20260513 (TheRock gfx1151 wheels) |
 | ROCm/HIP | 7.13.26183 |
-| LLM backend | Local llama-swap at `http://127.0.0.1:8101/v1` |
+| LLM backend (proxy) | **llama-swap** at `http://127.0.0.1:8101/v1` (OpenAI-compatible, fast model switching) |
+| LLM backend (inference) | **lemonade** ([lemonade-sdk/lemonade](https://github.com/lemonade-sdk/lemonade)) — AMD-optimized, has gfx1151 ROCm + Vulkan paths for Strix Halo iGPU and Ryzen AI NPU |
 | Active LLM model | `Gemma-4-E4B-instruct` |
 | numpy | 1.26.4 (downgraded by deepfilternet, torch still works) |
 | DeepFilterNet | 0.5.6 (patched for torchaudio compat) |
@@ -89,7 +90,7 @@ Test environment: Fedora 44, ROCm 7.13 (TheRock). Audio is synthesized low-ampli
 |---|---|---|---|
 | **STT** | 1 s audio | 0.054 s | RTF 18.6× |
 | **STT** | 2 s audio | 0.062 s | RTF 32.4× |
-| **LLM cold-start TTFT** | First request | **16.97 s** | llama-swap loads the model into VRAM |
+| **LLM cold-start TTFT** | First request | **16.97 s** | lemonade loads the model into VRAM (via llama-swap) |
 | **LLM steady-state TTFT** | 2nd+ request | **0.05 s** | KV cache warm, **essentially free** |
 | **LLM steady-state throughput** | 60 tokens | ~37 tok/s | Acceptable for real-time conversation |
 | **TTS TTFA** | Steady state | ~0.84 s | First call includes CUDA graph compile (**12–14 s**) |
@@ -183,7 +184,7 @@ Ordered by expected benefit.
 
 **Measured finding**: `Gemma-4-E4B-instruct` steady-state TTFT is only **50 ms** — essentially free. Switching models is **not** worthwhile.
 
-**LLM model comparison** (2026-06-04, llama-swap 8101, 3-prompt average):
+**LLM model comparison** (2026-06-04, llama-swap :8101 → lemonade, 3-prompt average):
 
 | Model | Cold start | Steady-state TTFT | tok/s | Notes |
 |---|---|---|---|---|
@@ -200,13 +201,13 @@ If you really want to optimize, these are more effective than switching models:
 
 **a) Enable prompt prefix cache** (recommended)
 
-llama-swap / vLLM support reusing the KV cache for identical system prompts. speech-to-speech sends the same system prompt every call, so this gives **~30% TTFT gain** (50 ms → 35 ms — small in absolute terms, but easy). Configure on the llama-swap side.
+lemonade (and other inference backends like vLLM) supports reusing the KV cache for identical system prompts. speech-to-speech sends the same system prompt every call, so this gives **~30% TTFT gain** (50 ms → 35 ms — small in absolute terms, but easy). Configure on the lemonade / llama-swap side.
 
 **b) Warm up the LLM at startup** (recommended)
 
-Push llama-swap's 17 s cold-start cost off the user's critical path. See the full warmup script in [§2.c](#c-warm-up-tts--llm--stt-remove-cold-start).
+Push lemonade's 17 s cold-start cost (via llama-swap) off the user's critical path. See the full warmup script in [§2.c](#c-warm-up-tts--llm--stt-remove-cold-start).
 
-**c) Switch to vLLM / SGLang** (only if llama-swap becomes a bottleneck)
+**c) Switch to vLLM / SGLang** (only if llama-swap + lemonade becomes a bottleneck)
 
 Higher throughput and concurrency, but vLLM's gfx1151 compatibility needs evaluation. **Not needed currently**.
 
@@ -443,7 +444,7 @@ See [Tuning §2.a](#a-flash-attention--not-recommended-for-gfx1151). Rationale: 
 
 ### LLM alternatives
 
-All llama-swap-managed models are available; edit `--model_name` in `sts_start.sh` (a **restart of the pipeline is required** after the change).
+All models registered in llama-swap (which delegates to lemonade) are available; edit `--model_name` in `sts_start.sh` (a **restart of the pipeline is required** after the change).
 
 **Measured data** (2026-06-04, 3-prompt average, steady state):
 
@@ -499,7 +500,7 @@ speech-to-speech outputs to stdout/stderr. Recommended to redirect:
 nohup ./sts_start.sh > /tmp/sts.log 2>&1 &
 ```
 
-### llama-swap health check
+### LLM stack health check (llama-swap + lemonade)
 
 ```bash
 curl -s http://127.0.0.1:8101/v1/models | jq '.data[].id'
@@ -558,25 +559,11 @@ If deepfilternet breaks but you must use numpy 2.x with torch, pick one.
 ### Short term (1–2 weeks)
 
 - [x] ~~Install SoX, DeepFilterNet (optional deps)~~ — DeepFilterNet installed (with patch), SoX not
-- [x] ~~Try `Gemma-4-E2B-instruct` for TTFT improvement~~ — **Failed**: all 3 variants (`instruct` / `base` / `thinking`) error with `upstream command exited prematurely`; llama-swap server-side issue, awaiting fix from config owner
-- [x] ~~Benchmark llama-swap models for TTFT~~ — 7 models tested, **Gemma-4-E4B-instruct is steady-state TTFT optimal**, do not switch
-- [ ] Add **LLM warmup** to `sts_start.sh` (eliminate 17 s cold start)
-- [ ] Evaluate `CosyVoice 2` Chinese TTS quality (ROCm compat test needed)
-- [ ] Refactor TTS to streaming (`non_streaming_mode=False`)
-- [ ] Build an OpenAI Realtime API-compatible web client (HTML+JS)
-- [ ] File issue on deepfilternet upstream (torchaudio.backend compat)
-- [ ] File issue on llama-swap maintainer (Gemma-4-E2B startup failure)
-
-### Medium term (1 month)
-
-- [ ] Deploy web client, browser-based voice conversation
-- [ ] Add observability: prometheus metrics / OpenTelemetry
-- [ ] Multi-user concurrency test: current pipeline is single-session
-- [ ] Tune llama-swap inference parameters (temperature, repetition_penalty, etc.)
-
-### Long term
-
-- [ ] Evaluate vLLM / SGLang as llama-swap replacement
+- [x] ~~Try `Gemma-4-E2B-instruct` for TTFT improvement~~ — **Failed**: all 3 variants (`instruct` / `base` / `thinking`) error with `upstream command exited prematurely`; lemonade backend issue, awaiting fix from config owner
+- [x] ~~Benchmark LLM models for TTFT~~ — 7 models tested, **Gemma-4-E4B-instruct is steady-state TTFT optimal**, do not switch
+- [ ] File issue on lemonade maintainer (Gemma-4-E2B startup failure)
+- [ ] Tune lemonade / llama-swap inference parameters (temperature, repetition_penalty, etc.)
+- [ ] Evaluate vLLM / SGLang as lemonade replacement
 - [ ] ~~ROCm Flash Attention 2/3~~ — **Not viable**: no upstream gfx1151 support
 - [ ] ~~AOTriton kernels~~ — **No Python backend**: C++ ops registered but Python runtime missing
 - [ ] Wait for speech-to-speech upstream to fix MPS bug, remove monkey-patch
@@ -609,4 +596,5 @@ If deepfilternet breaks but you must use numpy 2.x with torch, pick one.
 - ROCm doc: [01-rocm-gfx1151-pytorch-install.md](./01-rocm-gfx1151-pytorch-install.md)
 - Benchmark scripts: `/home/kamjin/scripts/bench_sts_pipeline.py` (end-to-end), `/home/kamjin/scripts/bench_llm_models.py` (LLM TTFT comparison)
 - Start script: `/home/kamjin/sts_start.sh`
-- llama-swap: `http://127.0.0.1:8101/v1`
+- llama-swap (proxy): `http://127.0.0.1:8101/v1`
+- lemonade (inference backend): AMD TheRock + Vulkan paths

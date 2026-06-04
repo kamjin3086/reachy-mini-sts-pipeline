@@ -31,6 +31,7 @@ components retain their own licenses:
   - FunASR / Paraformer — Apache-2.0 / MIT
   - Qwen3-TTS — See its LICENSE
   - llama-swap — MIT
+  - lemonade (lemonade-sdk/lemonade) — Apache-2.0
   - AMD TheRock — MIT
   - speech-to-speech and its dependencies — See respective LICENSE files
 

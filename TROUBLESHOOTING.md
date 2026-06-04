@@ -11,8 +11,8 @@
 | `hipErrorInvalidImage` | `HSA_OVERRIDE_GFX_VERSION=11.0.0` triggered on ROCm 7.13 | Remove the variable from `sts_start.sh` |
 | `HF_HUB_ENABLE_HF_TRANSFER` error | hf_transfer not installed | `uv pip install hf_transfer` |
 | `ModuleNotFoundError: No module named 'df'` | DeepFilterNet installed but not patched | See [DeepFilterNet patch](#deepfilternet-torchaudio-incompat) below |
-| `Model 'X' not found` (LLM server side) | Model not registered with your OpenAI-compatible server | Change `--model_name` in `sts_start.sh` to a model your server hosts (e.g. one already loaded into `llama-server`) |
-| `unable to start process: upstream command exited prematurely but successfully` | LLM server-side config issue (model command invalid, OOM, etc.) | Check the LLM server's own logs; verify the model loads cleanly when invoked directly |
+| `Model 'X' not found` (llama-swap side) | Model not registered with llama-swap | Change `--model_name` in `sts_start.sh` to a model registered in llama-swap, or add the model to its `config.yaml` |
+| `unable to start process: upstream command exited prematurely but successfully` | lemonade backend config issue (model command invalid, OOM, etc.) | Check lemonade's own logs; verify the model loads cleanly when `lemonade serve` is run directly |
 | `pip` points to Python 3.14, not venv | `~/.local/bin/pip` in PATH takes precedence | `export VIRTUAL_ENV=/home/kamjin/apps/.venv` then use `uv pip` |
 
 ## Reachy Mini connection
