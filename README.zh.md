@@ -91,7 +91,7 @@ python3 scripts/bench_sts_pipeline.py --quick
 python3 scripts/bench_llm_models.py
 ```
 
-实测 7 个 LLM 模型后，**`Gemma-4-E4B-instruct` 是稳态 TTFT 最优（50ms）**——不要被 llama-swap 描述里的 "Very Fast" 标签骗了，NPU 加速模型反而更慢。详见 [docs/03 调优方向 §1](docs/03-speech-to-speech-status.md)。
+实测 7 个 LLM 模型后，**`Gemma-4-E4B-instruct` 是稳态 TTFT 最优（50ms）** NPU 加速模型反而更慢。详见 [docs/03 调优方向 §1](docs/03-speech-to-speech-status.md)。
 
 ## 核心组件
 
