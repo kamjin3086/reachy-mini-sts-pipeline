@@ -117,14 +117,16 @@ uv pip install "deepfilternet==0.5.6"
 
 ### Step 3 — LLM backend
 
-The pipeline expects an OpenAI-compatible endpoint at `http://127.0.0.1:8101/v1` (llama-swap default). After benchmarking **7 models**, `Gemma-4-E4B-instruct` is the steady-state TTFT champion (50 ms). Full numbers in [docs/03 §Tuning §1](docs/03-speech-to-speech-status.md).
+The pipeline expects any OpenAI-compatible LLM endpoint. Run a local server (e.g. `llama-server` from llama.cpp, vLLM, SGLang, or any other) and point the pipeline at it. The default URL in `sts_start.sh` is `http://127.0.0.1:8101/v1` — adjust `--responses_api_base_url` to match yours.
+
+After benchmarking **7 models**, `Gemma-4-E4B-instruct` is the steady-state TTFT champion (50 ms). Full numbers in [docs/03 §Tuning §1](docs/03-speech-to-speech-status.md).
 
 ### Step 4 — Launch
 
 ```bash
 git clone https://github.com/kamjin3086/reachy-mini-sts-pipeline.git
 cd reachy-mini-sts-pipeline
-$EDITOR scripts/sts_start.sh   # Adjust --model_name to a model your llama-swap knows
+$EDITOR scripts/sts_start.sh   # Adjust --model_name to a model your LLM server hosts
 ./scripts/sts_start.sh
 # → WebSocket: ws://0.0.0.0:8765/v1/realtime
 ```
@@ -137,18 +139,7 @@ export GPU_MAX_HEAP_SIZE=100                        # Cap HIP heap
 export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1    # AOTriton perf
 ```
 
-### Step 5 — Reachy Mini integration (optional)
-
-```bash
-# 1. Install Reachy Mini Control (macOS) from Pollen Robotics
-# 2. Fork the conversation app for live editing:
-git clone https://github.com/kamjin3086/reachy_mini_conversation_app.git
-cd reachy_mini_conversation_app
-pip install -e .   # editable install — source edits take effect live (see docs/04)
-# 3. In Reachy Mini Control, point the conversation app to ws://<host>:8765/v1/realtime
-```
-
-Steady-state perceived latency: **~1.0 s** (user stops speaking → first synthesized audio).
+Steady-state perceived latency: **~1.0 s** (user stops speaking → first synthesized audio). For Reachy Mini integration, see the forked conversation app: [kamjin3086/reachy_mini_conversation_app](https://github.com/kamjin3086/reachy_mini_conversation_app). For app development with live source edits, see the `pip install -e .` tip in [docs/04](docs/04-reachy-mini-debug-journey.md#iterating-on-the-forked-app-editable-install).
 
 ## Documentation
 
@@ -180,7 +171,7 @@ After benchmarking 7 LLM models, **Gemma-4-E4B-instruct** is the steady-state TT
 | ASR | Paraformer-zh (FunASR) | SenseVoice, faster-whisper | Best Chinese CER (1.95%) |
 | LLM | Gemma-4-E4B-instruct | GPT-OSS-20B, Qwen3.6-35B-A3B | Steady-state TTFT king |
 | TTS | Qwen3-TTS (CustomVoice) | Kokoro, CosyVoice 2 | ROCm compatibility verified |
-| LLM gateway | llama-swap | vLLM, SGLang | Lightweight, fast model switching |
+| LLM server | Any OpenAI-compatible (e.g. `llama-server`, vLLM, SGLang) | — | The pipeline only needs an OpenAI-compatible endpoint |
 | Denoising | DeepFilterNet 0.5.6 | RNNoise | High quality, patched for torchaudio 2.10 |
 
 ## Known issues & workarounds
@@ -202,7 +193,7 @@ Full list: [docs/03 §Known Issues](docs/03-speech-to-speech-status.md), [TROUBL
 - [facebookresearch/speech-to-speech](https://github.com/facebookresearch/speech-to-speech) — Core STS pipeline
 - [FunASR/Paraformer](https://github.com/modelscope/FunASR) — Chinese ASR
 - [Qwen3-TTS](https://huggingface.co/Qwen) — TTS
-- [llama-swap](https://github.com/mostlygeek/llama-swap) — Lightweight LLM gateway
+- [llama-server](https://github.com/ggml-org/llama.cpp) (or any OpenAI-compatible LLM server) — LLM backend
 - [AMD TheRock](https://github.com/ROCm/TheRock) — gfx1151 PyTorch wheels
 - [Pollen Robotics](https://www.pollen-robotics.com/reachy-mini/) — Reachy Mini hardware
 - [Hugging Face — Local Reachy Mini Conversation](https://huggingface.co/blog/local-reachy-mini-conversation) — Original inspiration

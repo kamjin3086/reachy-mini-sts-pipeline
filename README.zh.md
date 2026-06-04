@@ -117,14 +117,16 @@ uv pip install "deepfilternet==0.5.6"
 
 ### 第 3 步 —— LLM 后端
 
-管道默认连 `http://127.0.0.1:8101/v1`（llama-swap 默认端口）。实测 **7 个模型** 后，`Gemma-4-E4B-instruct` 是稳态 TTFT 之最（50 ms）。完整数据见 [docs/03 §调优 §1](docs/03-speech-to-speech-status.md)。
+管道只需要一个 OpenAI 兼容的 LLM 端点。在本地起一个 LLM server（`llama-server`（llama.cpp 自带）、vLLM、SGLang 或任何其他），把管道指向它即可。`sts_start.sh` 默认的 URL 是 `http://127.0.0.1:8101/v1` —— 按需调整 `--responses_api_base_url`。
+
+实测 **7 个模型** 后，`Gemma-4-E4B-instruct` 是稳态 TTFT 之最（50 ms）。完整数据见 [docs/03 §调优 §1](docs/03-speech-to-speech-status.md)。
 
 ### 第 4 步 —— 启动
 
 ```bash
 git clone https://github.com/kamjin3086/reachy-mini-sts-pipeline.git
 cd reachy-mini-sts-pipeline
-$EDITOR scripts/sts_start.sh   # 把 --model_name 改成你 llama-swap 里有的模型
+$EDITOR scripts/sts_start.sh   # 把 --model_name 改成你 LLM server 提供的模型
 ./scripts/sts_start.sh
 # → WebSocket: ws://0.0.0.0:8765/v1/realtime
 ```
@@ -137,18 +139,7 @@ export GPU_MAX_HEAP_SIZE=100                        # 限制 HIP heap
 export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1    # AOTriton 性能
 ```
 
-### 第 5 步 —— Reachy Mini 集成（可选）
-
-```bash
-# 1. 在 macOS 上从 Pollen Robotics 装 Reachy Mini Control
-# 2. Fork 对话 app 以便实时编辑：
-git clone https://github.com/kamjin3086/reachy_mini_conversation_app.git
-cd reachy_mini_conversation_app
-pip install -e .   # 可编辑模式 —— 源码改动实时生效（见 docs/04）
-# 3. 在 Reachy Mini Control 里把对话 app 指向 ws://<host>:8765/v1/realtime
-```
-
-稳态感知延迟：**~1.0 秒**（用户停嘴 → 听到第一声合成音）。
+稳态感知延迟：**~1.0 秒**（用户停嘴 → 听到第一声合成音）。要接 Reachy Mini 见 fork 的对话 app：[kamjin3086/reachy_mini_conversation_app](https://github.com/kamjin3086/reachy_mini_conversation_app)。要边改源码边调试（`pip install -e .` 可编辑模式）见 [docs/04](docs/04-reachy-mini-debug-journey.zh.md#迭代修改-fork-的-app可编辑模式安装)。
 
 ## 文档索引
 
@@ -180,7 +171,7 @@ python3 scripts/bench_llm_models.py
 | ASR | Paraformer-zh (FunASR) | SenseVoice, faster-whisper | 中文 CER 1.95% 最优 |
 | LLM | Gemma-4-E4B-instruct | GPT-OSS-20B, Qwen3.6-35B-A3B | 稳态 TTFT 之王 |
 | TTS | Qwen3-TTS (CustomVoice) | Kokoro, CosyVoice 2 | ROCm 兼容已验证 |
-| LLM 网关 | llama-swap | vLLM, SGLang | 轻量、模型切换快 |
+| LLM server | 任何 OpenAI 兼容 server（如 `llama-server`、vLLM、SGLang） | — | 管道只需要 OpenAI 兼容端点 |
 | 降噪 | DeepFilterNet 0.5.6 | RNNoise | 高质量、已 patch 兼容 |
 
 ## 已知问题与 workaround
@@ -202,7 +193,7 @@ python3 scripts/bench_llm_models.py
 - [facebookresearch/speech-to-speech](https://github.com/facebookresearch/speech-to-speech) — 核心 STS 管道
 - [FunASR/Paraformer](https://github.com/modelscope/FunASR) — 中文 ASR
 - [Qwen3-TTS](https://huggingface.co/Qwen) — TTS
-- [llama-swap](https://github.com/mostlygeek/llama-swap) — 轻量 LLM 网关
+- [llama-server](https://github.com/ggml-org/llama.cpp)（或任何 OpenAI 兼容 LLM server）—— LLM 后端
 - [AMD TheRock](https://github.com/ROCm/TheRock) — gfx1151 PyTorch wheels
 - [Pollen Robotics](https://www.pollen-robotics.com/reachy-mini/) — Reachy Mini 硬件
 - [Hugging Face 博客：Local Reachy Mini Conversation](https://huggingface.co/blog/local-reachy-mini-conversation) — 起点灵感
