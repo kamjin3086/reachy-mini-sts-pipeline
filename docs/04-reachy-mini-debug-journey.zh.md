@@ -1,29 +1,28 @@
-# Reachy Mini Lite + speech-to-speech Pipeline: Connection OK, No Response — Need Help Debugging
+# 调试记录："连接成功，无响应"症状（已解决）
 
 > [English](04-reachy-mini-debug-journey.md) · [← 返回 README](../README.zh.md)
 >
-> 本文档是 2026-06-03 的求助草稿（实际未发到 Reddit）。在 GPU 加速阶段问题已解决，但原始诊断过程保留作为调试参考。
+> 这是 2026-06-03 首次测试时遇到的"什么都不发生"症状的诊断记录归档。真正的根因和修复方案见本页末尾的[尾声](#尾声问题最终如何解决)。
 
-## Background
+## 症状
 
-Hi everyone! I recently assembled a **Reachy Mini Lite** from parts (took about 2 hours) and got it connected to my setup. I'm running the full speech-to-speech pipeline on a **Strix Halo 128G** (AMD GPU workstation) connected via my macOS machine.
+`speech-to-speech` 服务正常启动，Reachy Mini 对话 app 也连上了，但**用户说话时什么也不发生** —— 没有日志、没有机器人响应、没有任何声音输出。WebSocket 建立后整个管道就静默挂住。
 
-I followed the excellent guide from the Hugging Face blog ([Local Reachy Mini Conversation](https://huggingface.co/blog/local-reachy-mini-conversation)) and was inspired by this thread: [Reachy Mini Goes Fully Local](https://www.reddit.com/r/LocalLLaMA/comments/1tq4x48/reachy_mini_goes_fully_local/). Great work by the way — this project has a lot of potential!
+## 当时的配置
 
-## The Problem
+- **机器人**：Reachy Mini Lite（2026-06-01 组装，约 3 小时）
+- **算力**：Strix Halo 128G（AMD GPU，Linux）
+- **控制端**：macOS（Reachy Mini Control 桌面 app）
+- **App**：通过 Reachy Mini Control 装的 `reachy_mini_conversation_app`
 
-The `speech-to-speech` server starts successfully and the Reachy Mini conversation app connects, but **nothing happens when I speak** — no logs, no robot response, no audio output. The pipeline seems to hang silently after the WebSocket connection is established.
+参考的起步资料：
 
-## My Setup
+- [Local Reachy Mini Conversation（Hugging Face 博客）](https://huggingface.co/blog/local-reachy-mini-conversation)
+- [Reachy Mini Goes Fully Local（r/LocalLLaMA）](https://www.reddit.com/r/LocalLLaMA/comments/1tq4x48/reachy_mini_goes_fully_local/)
 
-- **Robot**: Reachy Mini Lite (newly assembled)
-- **Compute**: Strix Halo 128G (AMD GPU, running Linux)
-- **Control**: macOS (Reachy Mini Control desktop app)
-- **App**: `reachy_mini_conversation_app` installed via Reachy Mini Control
+## 管道配置
 
-## Pipeline Configuration
-
-Since the built-in `qwen3-tts` only supports CUDA and I discovered this at runtime, I switched to **Kokoro** for TTS. Here's my command:
+第一次 CPU 跑：STT 用 Parakeet TDT，TTS 用 Kokoro（内置的 `qwen3-tts` 只支持 CUDA，是运行时才发现的）：
 
 ```bash
 speech-to-speech \
@@ -38,9 +37,9 @@ speech-to-speech \
   --stt parakeet-tdt
 ```
 
-## Server Startup Logs
+## 服务启动日志
 
-The server starts with warnings but no errors:
+服务启动时只有 warning，没有 error：
 
 ```
 DeepFilterNet not available for audio enhancement: No module named 'df'
@@ -73,35 +72,20 @@ INFO:     Application startup complete.
 INFO:     Uvicorn running on http://0.0.0.0:8765 (Press CTRL+C to quit)
 ```
 
-After configuring the IP and port in the Reachy Mini conversation app, the logs show a new client connection, but speaking produces zero activity — no VAD triggers, no STT logs, nothing.
+在 Reachy Mini 对话 app 里填好 IP 和端口后，日志显示有新客户端连上，但说话时什么活动都没有 —— VAD 不触发、STT 不打印、完全没有动静。
 
-## What I've Checked
+## 已经从日志确认的事实
 
-- Server starts cleanly and all models load on CPU
-- LLM backend (Responses API on port 8101) responds correctly during warmup
-- WebSocket connection from the app is established successfully
-- Copilot confirmed the connection handshake looks valid
+- 服务启动正常，所有模型加载到 CPU
+- LLM 后端（8101 端口的 Responses API）warmup 期间响应正常
+- App 端的 WebSocket 连接建立成功
+- 握手本身看起来正常
 
-## What I Haven't Been Able to Check
+## 当时无法从服务端日志判断的疑点
 
-Due to the remote setup, I haven't been able to verify:
-- Microphone permissions and audio input routing on the robot
-- Whether the app is actually sending audio data over the WebSocket
-- Network connectivity between the macOS control machine and the Linux server
-- Reachy Mini Control desktop app logs for connection errors
-
-I plan to do a thorough in-person debug session tonight with Copilot to inspect all logs (Reachy Mini Control desktop, app, server, and robot status).
-
-## Questions
-
-1. Has anyone successfully run this exact pipeline (parakeet-tdt + responses-api LLM + Kokoro TTS) with Reachy Mini Lite? Any gotchas?
-2. Could the issue be related to running everything on CPU vs GPU? The blog recommends CUDA for Qwen3-TTS, but I'm on AMD.
-3. Are there known issues with the Kokoro TTS handler in the realtime WebSocket mode?
-4. Any debugging tips for the audio pipeline between the Reachy Mini app and the speech-to-speech server?
-
-Any help or pointers would be greatly appreciated. Happy to share more logs or details once I can access the machine in person!
-
----
+- 机器人的麦克风权限和音频输入路由
+- App 是不是真的把音频数据通过 WebSocket 发过来了
+- Reachy Mini Control 桌面 app 的连接错误日志
 
 ## 尾声：问题最终如何解决
 

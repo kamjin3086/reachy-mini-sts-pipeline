@@ -1,29 +1,28 @@
-# Reachy Mini Lite + speech-to-speech Pipeline: Connection OK, No Response — Need Help Debugging
+# Debug Record: "Connection OK, No Response" Symptom (Resolved)
 
 > [中文版](04-reachy-mini-debug-journey.zh.md) · [← Back to README](../README.md)
 >
-> This is the original help-request draft from 2026-06-03 (not actually posted to Reddit). The issue was resolved during the GPU-accelerated phase, but the original diagnostic process is preserved as a debugging reference.
+> This is the preserved diagnostic record for the original "nothing happens" symptom encountered during initial testing on 2026-06-03. The actual root cause and fix are described in the [Epilogue](#epilogue-how-it-was-actually-resolved) at the bottom of this page.
 
-## Background
+## Symptom
 
-Hi everyone! I recently assembled a **Reachy Mini Lite** from parts (took about 2 hours) and got it connected to my setup. I'm running the full speech-to-speech pipeline on a **Strix Halo 128G** (AMD GPU workstation) connected via my macOS machine.
+The `speech-to-speech` server starts successfully and the Reachy Mini conversation app connects, but **nothing happens when the user speaks** — no logs, no robot response, no audio output. The pipeline hangs silently after the WebSocket connection is established.
 
-I followed the excellent guide from the Hugging Face blog ([Local Reachy Mini Conversation](https://huggingface.co/blog/local-reachy-mini-conversation)) and was inspired by this thread: [Reachy Mini Goes Fully Local](https://www.reddit.com/r/LocalLLaMA/comments/1tq4x48/reachy_mini_goes_fully_local/). Great work by the way — this project has a lot of potential!
+## Setup at the time
 
-## The Problem
-
-The `speech-to-speech` server starts successfully and the Reachy Mini conversation app connects, but **nothing happens when I speak** — no logs, no robot response, no audio output. The pipeline seems to hang silently after the WebSocket connection is established.
-
-## My Setup
-
-- **Robot**: Reachy Mini Lite (newly assembled)
+- **Robot**: Reachy Mini Lite (assembled 2026-06-01, ~3 hours)
 - **Compute**: Strix Halo 128G (AMD GPU, running Linux)
 - **Control**: macOS (Reachy Mini Control desktop app)
 - **App**: `reachy_mini_conversation_app` installed via Reachy Mini Control
 
-## Pipeline Configuration
+References followed during initial setup:
 
-Since the built-in `qwen3-tts` only supports CUDA and I discovered this at runtime, I switched to **Kokoro** for TTS. Here's my command:
+- [Local Reachy Mini Conversation (Hugging Face blog)](https://huggingface.co/blog/local-reachy-mini-conversation)
+- [Reachy Mini Goes Fully Local (r/LocalLLaMA)](https://www.reddit.com/r/LocalLLaMA/comments/1tq4x48/reachy_mini_goes_fully_local/)
+
+## Pipeline configuration
+
+The CPU-only first attempt used Parakeet TDT for STT and Kokoro for TTS (the built-in `qwen3-tts` only supports CUDA, which was discovered at runtime):
 
 ```bash
 speech-to-speech \
@@ -38,7 +37,7 @@ speech-to-speech \
   --stt parakeet-tdt
 ```
 
-## Server Startup Logs
+## Server startup logs
 
 The server starts with warnings but no errors:
 
@@ -75,33 +74,18 @@ INFO:     Uvicorn running on http://0.0.0.0:8765 (Press CTRL+C to quit)
 
 After configuring the IP and port in the Reachy Mini conversation app, the logs show a new client connection, but speaking produces zero activity — no VAD triggers, no STT logs, nothing.
 
-## What I've Checked
+## What was verified from logs
 
 - Server starts cleanly and all models load on CPU
 - LLM backend (Responses API on port 8101) responds correctly during warmup
 - WebSocket connection from the app is established successfully
-- Copilot confirmed the connection handshake looks valid
+- The connection handshake itself looks valid
 
-## What I Haven't Been Able to Check
+## Suspected (could not be confirmed from server-side logs alone)
 
-Due to the remote setup, I haven't been able to verify:
 - Microphone permissions and audio input routing on the robot
 - Whether the app is actually sending audio data over the WebSocket
-- Network connectivity between the macOS control machine and the Linux server
 - Reachy Mini Control desktop app logs for connection errors
-
-I plan to do a thorough in-person debug session tonight with Copilot to inspect all logs (Reachy Mini Control desktop, app, server, and robot status).
-
-## Questions
-
-1. Has anyone successfully run this exact pipeline (parakeet-tdt + responses-api LLM + Kokoro TTS) with Reachy Mini Lite? Any gotchas?
-2. Could the issue be related to running everything on CPU vs GPU? The blog recommends CUDA for Qwen3-TTS, but I'm on AMD.
-3. Are there known issues with the Kokoro TTS handler in the realtime WebSocket mode?
-4. Any debugging tips for the audio pipeline between the Reachy Mini app and the speech-to-speech server?
-
-Any help or pointers would be greatly appreciated. Happy to share more logs or details once I can access the machine in person!
-
----
 
 ## Epilogue: how it was actually resolved
 
