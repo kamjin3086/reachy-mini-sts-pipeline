@@ -14,6 +14,8 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 
 unset HF_ENDPOINT
 
+# 各组件的 warmup（STT 模型加载、LLM 首请求、TTS CUDA graph 编译）
+# 由 speech-to-speech CLI 内部自动完成，无需外部预热
 speech-to-speech \
     --responses_api_base_url "http://127.0.0.1:8101/v1" \
     --responses_api_api_key "" \

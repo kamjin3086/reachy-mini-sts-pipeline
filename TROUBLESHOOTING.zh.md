@@ -28,7 +28,7 @@
 | 症状 | 原因 | 解决 |
 |---|---|---|
 | E2E 感知延迟 4s+ | LLM 选了 NPU 模型或 Step-3.5-Flash | 改回 `Gemma-4-E4B-instruct`（稳态 TTFT 50ms） |
-| TTS 首次 12s+ | CUDA graph 编译 | 不可消除，但可在 `sts_start.sh` 末尾加预热请求 |
+| TTS 首次 12s+ | CUDA graph 编译 | 不可消除；CLI 启动时内部自动预热 |
 | STT 报 MPS 错误 | 库内 bug：`paraformer_handler.py:56` | 见下面 [MPS bug patch](#mps-bug) |
 | LLM 401 invalid_api_key | `OPENAI_API_KEY` 客户端环境干扰 | `unset OPENAI_API_KEY` 后重启 |
 

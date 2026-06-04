@@ -28,7 +28,7 @@
 | Symptom | Cause | Fix |
 |---|---|---|
 | E2E perceived latency 4 s+ | LLM is on NPU model or Step-3.5-Flash | Switch back to `Gemma-4-E4B-instruct` (steady-state TTFT 50 ms) |
-| First TTS call 12 s+ | CUDA graph compile | Unavoidable, but can warmup at end of `sts_start.sh` |
+| First TTS call 12 s+ | CUDA graph compile | Unavoidable; CLI does warmup internally at startup |
 | STT reports MPS error | Library bug: `paraformer_handler.py:56` | See [MPS bug patch](#mps-bug) below |
 | LLM 401 invalid_api_key | `OPENAI_API_KEY` client env interference | `unset OPENAI_API_KEY` and restart |
 

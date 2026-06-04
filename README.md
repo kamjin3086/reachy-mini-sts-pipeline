@@ -27,7 +27,7 @@ This repository documents the entire journey — installation, pitfalls, perform
 | Chinese support | ✅ Excellent ASR; TTS is English-leaning (use CosyVoice 2 for production) |
 | Fully offline | ✅ Zero cloud calls |
 
-Cold-start first request takes ~29 s (model load + TTS CUDA graph capture). For production, add a warmup request to push the cold-start cost off the user's critical path — see [docs/03 §Performance Baseline](docs/03-speech-to-speech-status.md).
+Cold-start first request takes ~29 s (model load + TTS CUDA graph capture). The CLI does warmup internally at startup, but the first real user request still pays the full cold-start cost — see [docs/03 §Performance Baseline](docs/03-speech-to-speech-status.md).
 
 ### The story
 

@@ -27,7 +27,7 @@
 | 中文支持 | ✅ ASR 优秀；TTS 偏英文（生产建议换 CosyVoice 2）|
 | 完全离线 | ✅ 无任何云 API 调用 |
 
-冷启动首请求 ~29s（模型加载 + TTS CUDA graph 编译）。**生产建议**加预热请求把冷启动成本从用户路径中移除，详见 [docs/03 性能基线](docs/03-speech-to-speech-status.md)。
+冷启动首请求 ~29s（模型加载 + TTS CUDA graph 编译）。CLI 启动时内部会做预热，但第一个真实用户请求仍需承担完整冷启动成本，详见 [docs/03 性能基线](docs/03-speech-to-speech-status.md)。
 
 ### 故事线
 
