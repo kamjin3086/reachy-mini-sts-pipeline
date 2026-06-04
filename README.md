@@ -91,7 +91,7 @@ python3 scripts/bench_sts_pipeline.py --quick
 python3 scripts/bench_llm_models.py
 ```
 
-After benchmarking 7 LLM models, **Gemma-4-E4B-instruct** is the steady-state TTFT champion (50 ms). Don't be misled by "Very Fast" labels in llama-swap descriptions — NPU-accelerated models were actually slower. Full data in [docs/03 §Tuning §1](docs/03-speech-to-speech-status.md).
+After benchmarking 7 LLM models, **Gemma-4-E4B-instruct** is the steady-state TTFT champion (50 ms). NPU-accelerated models were actually slower. Full data in [docs/03 §Tuning §1](docs/03-speech-to-speech-status.md).
 
 ## Component selection
 
