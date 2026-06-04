@@ -1,44 +1,46 @@
-# Speech-to-Speech 运行状态与调优指南
+# Speech-to-Speech Runtime Status & Tuning Guide
 
-> 上次更新：2026-06-04（v2 — 修正 LLM TTFT 实测数据 + LLM 模型选型对比）
-> 适用版本：speech-to-speech 0.2.9、funasr 1.3.9、qwen-tts 0.1.1、faster-qwen3-tts 0.2.6、deepfilternet 0.5.6
-> 相关文档：[speech-to-speech-install.md](./speech-to-speech-install.md)（安装）、[rocm-gfx1151-pytorch-install.md](./rocm-gfx1151-pytorch-install.md)（ROCm 基础）
+> Last updated: 2026-06-04 (v2 — corrected LLM TTFT measurements + LLM model selection)
+> Applicable versions: speech-to-speech 0.2.9, funasr 1.3.9, qwen-tts 0.1.1, faster-qwen3-tts 0.2.6, deepfilternet 0.5.6
+> Related: [02 — STS Pipeline Install](02-speech-to-speech-install.md), [01 — ROCm gfx1151 PyTorch Install](01-rocm-gfx1151-pytorch-install.md)
+>
+> [中文版](03-speech-to-speech-status.zh.md) · [← Back to README](../README.md)
 
-## 目录
+## Table of contents
 
-1. [当前运行状态](#当前运行状态)
-2. [性能基线](#性能基线)
-3. [性能测试方法](#性能测试方法)
-4. [调优方向](#调优方向)
-5. [已知问题与 workaround](#已知问题与-workaround)
-6. [可替换组件选型](#可替换组件选型)
-7. [日常运维](#日常运维)
-8. [未来工作](#未来工作)
+1. [Current runtime state](#current-runtime-state)
+2. [Performance baseline](#performance-baseline)
+3. [Benchmarking](#benchmarking)
+4. [Tuning directions](#tuning-directions)
+5. [Known issues & workarounds](#known-issues--workarounds)
+6. [Component alternatives](#component-alternatives)
+7. [Day-to-day operations](#day-to-day-operations)
+8. [Future work](#future-work)
 
 ---
 
-## 当前运行状态
+## Current runtime state
 
-### 硬件与软件栈
+### Hardware and software stack
 
-| 组件 | 当前配置 |
+| Component | Current configuration |
 |---|---|
-| 系统 | Fedora 44 |
+| System | Fedora 44 |
 | GPU | AMD Ryzen AI Max+ 395 / Radeon 8060S (gfx1151, Strix Halo) |
-| 共享内存 | UMA, 124 GB |
-| venv | `/home/kamjin/apps/.venv`（uv 创建，无 pip） |
+| Shared memory | UMA, 124 GB |
+| venv | `/home/kamjin/apps/.venv` (uv-managed, no pip) |
 | Python | 3.12.13 |
 | PyTorch | 2.10.0+rocm7.13.0a20260513 (TheRock gfx1151 wheels) |
 | ROCm/HIP | 7.13.26183 |
-| LLM 后端 | 本地 llama-swap `http://127.0.0.1:8101/v1` |
-| 当前 LLM 模型 | `Gemma-4-E4B-instruct` |
-| numpy | 1.26.4（被 deepfilternet 强制降级，torch 仍正常） |
-| DeepFilterNet | 0.5.6（已 patch torchaudio 兼容） |
-| flash-attn | 未安装（gfx1151 上游不支持） |
+| LLM backend | Local llama-swap at `http://127.0.0.1:8101/v1` |
+| Active LLM model | `Gemma-4-E4B-instruct` |
+| numpy | 1.26.4 (downgraded by deepfilternet, torch still works) |
+| DeepFilterNet | 0.5.6 (patched for torchaudio compat) |
+| flash-attn | Not installed (no upstream support for gfx1151) |
 
-### 启动脚本
+### Start script
 
-`/home/kamjin/sts_start.sh`：
+`/home/kamjin/sts_start.sh`:
 
 ```bash
 export GPU_MAX_ALLOC_PERCENT=100
@@ -62,200 +64,204 @@ speech-to-speech \
     --enable_live_transcription
 ```
 
-启动后所有组件正常 warmup，WebSocket 服务监听 `ws://0.0.0.0:8765/v1/realtime`。
+After launch, all components warm up and the WebSocket server listens on `ws://0.0.0.0:8765/v1/realtime`.
 
-### 模型与缓存路径
+### Model and cache paths
 
-| 内容 | 路径 |
+| Content | Path |
 |---|---|
 | Paraformer STT | `~/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch/` |
-| Qwen3-TTS | HF Hub 缓存（按需下载） |
-| Qwen3-TTS 默认声音 | `CustomVoice` 预设（含 Aiden / Vivian 等） |
+| Qwen3-TTS | HF Hub cache (downloaded on demand) |
+| Qwen3-TTS default voices | `CustomVoice` presets (Aiden / Vivian / etc.) |
 | nltk_data | `~/nltk_data` |
 
 ---
 
-## 性能基线
+## Performance baseline
 
-测试环境：Fedora 44、ROCm 7.13 (TheRock)、音频为合成的低幅度随机噪声（仅用于延迟测量，非真实语料）。
+Test environment: Fedora 44, ROCm 7.13 (TheRock). Audio is synthesized low-amplitude random noise (latency measurement only, not real speech).
 
-> **冷启动 vs 稳态**：以下数据均**区分**这两个状态。冷启动 = 服务刚启动后**第一次**请求（模型加载到 VRAM、CUDA graph capture、KV cache 预热）；稳态 = 第二次起的请求。
+> **Cold start vs steady state**: All data below **distinguishes** these two states. Cold start = the **first** request after server boot (models loaded into VRAM, CUDA graph capture, KV cache warmup). Steady state = 2nd request onwards.
 
-### 单组件延迟
+### Per-component latency
 
-| 组件 | 测试条件 | 延迟 | 备注 |
+| Component | Test condition | Latency | Notes |
 |---|---|---|---|
-| **STT** | 1s 音频 | 0.054s | RTF 18.6x |
-| **STT** | 2s 音频 | 0.062s | RTF 32.4x |
-| **LLM 冷启动 TTFT** | 首次请求 | **16.97s** | llama-swap 把模型加载到 VRAM |
-| **LLM 稳态 TTFT** | 2+ 次请求 | **0.05s** | KV cache 已暖，**基本无感** |
-| **LLM 稳态吞吐** | 60 tokens | ~37 tok/s | 实时对话可接受 |
-| **TTS TTFA** | 稳态 | ~0.84s | 首次含 CUDA graph 编译（**12-14s**） |
-| **TTS Total 首次** | 冷启动 | 70.5s | 含模型加载 + CUDA graph capture |
-| **TTS Total 稳态** | 2+ 次请求 | 个位数 | CUDA graph 缓存命中 |
+| **STT** | 1 s audio | 0.054 s | RTF 18.6× |
+| **STT** | 2 s audio | 0.062 s | RTF 32.4× |
+| **LLM cold-start TTFT** | First request | **16.97 s** | llama-swap loads the model into VRAM |
+| **LLM steady-state TTFT** | 2nd+ request | **0.05 s** | KV cache warm, **essentially free** |
+| **LLM steady-state throughput** | 60 tokens | ~37 tok/s | Acceptable for real-time conversation |
+| **TTS TTFA** | Steady state | ~0.84 s | First call includes CUDA graph compile (**12–14 s**) |
+| **TTS Total, first** | Cold start | 70.5 s | Model load + CUDA graph capture |
+| **TTS Total, steady state** | 2nd+ request | Single-digit seconds | CUDA graph cache hit |
 
-### 端到端用户感知延迟
+### End-to-end perceived latency
 
-**感知延迟 = STT + LLM_TTFT + TTS_TTFA**（"用户停止说话 → 听到第一个合成音"的时间）
+**Perceived latency = STT + LLM_TTFT + TTS_TTFA** (user stops speaking → first synthesized audio plays)
 
-| 状态 | STT | LLM_TTFT | TTS_TTFA | **E2E 感知** | TTS_Total |
+| State | STT | LLM_TTFT | TTS_TTFA | **E2E perceived** | TTS_Total |
 |---|---|---|---|---|---|
-| **冷启动** (第 1 次) | 0.085s | 16.97s | 12-14s | **~29s** | 70.5s (含 graph compile) |
-| **稳态** (2+ 次) | 0.085s | 0.05s | 0.84s | **~0.97s** | 个位数 |
+| **Cold start** (1st request) | 0.085 s | 16.97 s | 12–14 s | **~29 s** | 70.5 s (incl. graph compile) |
+| **Steady state** (2nd+) | 0.085 s | 0.05 s | 0.84 s | **~0.97 s** | Single-digit seconds |
 
-> **关键观察（实测修正 2026-06-04）**：
-> - **之前文档中"LLM_TTFT 3.26s"是冷启动 + 首请求混合值，不是稳态**。稳态 TTFT 实际仅 **~50ms**，对话几乎无延迟
-> - 端到端稳态感知延迟 **~1s**，已经接近"自然对话"水平
-> - 冷启动主要耗时在 **TTS 的 CUDA graph 编译（12-14s）** 和 **LLM 首次加载（~17s）**
-> - **生产部署建议**：服务启动后做一次"预热请求"，把冷启动成本从用户感知路径中移除
+> **Key observations (corrected by measurement 2026-06-04)**:
+> - The "LLM_TTFT 3.26 s" figure in earlier docs was a cold-start + first-request hybrid, **not** steady state. Steady-state TTFT is in fact only **~50 ms** — barely noticeable in conversation.
+> - Steady-state E2E perceived latency is **~1 s**, already close to "natural conversation" territory.
+> - Cold-start costs are dominated by **TTS CUDA graph compile (12–14 s)** and **LLM first load (~17 s)**.
+> - **Production recommendation**: issue a warmup request right after server start to push cold-start cost off the user's critical path.
 
-### 性能瓶颈分布（稳态）
+### Bottleneck breakdown (steady state)
 
 ```
-E2E 稳态感知延迟 (0.97s) 分解:
-├── STT              0.085s  (  9%)  ← 非常快，已接近最优
-├── LLM TTFT         0.050s  (  5%)  ← 稳态基本无感
-└── TTS TTFA         0.840s  ( 86%)  ← 当前主要瓶颈
+E2E steady-state perceived latency (0.97 s) breakdown:
+├── STT              0.085 s  (  9%)  ← very fast, near optimal
+├── LLM TTFT         0.050 s  (  5%)  ← steady state, essentially free
+└── TTS TTFA         0.840 s  ( 86%)  ← current main bottleneck
 ```
 
 ---
 
-## 性能测试方法
+## Benchmarking
 
-### 快速测试
+### Quick test
 
 ```bash
 source /home/kamjin/apps/.venv/bin/activate
 cd /home/kamjin/scripts
 
-# 全部组件（每个 1-2 个测试点，约 1 分钟）
+# All components (1-2 test points each, ~1 min)
 python3 bench_sts_pipeline.py --quick
 
-# 只测单个组件
+# Single component only
 python3 bench_sts_pipeline.py --only stt
 python3 bench_sts_pipeline.py --only llm
 python3 bench_sts_pipeline.py --only tts
 python3 bench_sts_pipeline.py --only e2e
 ```
 
-### 完整测试
+### Full test
 
 ```bash
-# STT 1/2/5/10s × 2 轮，LLM/TTS 5 文本 × 2 轮，E2E 3 轮
-# 约 5-10 分钟（首次含模型加载）
+# STT 1/2/5/10s × 2 rounds, LLM/TTS 5 texts × 2 rounds, E2E 3 rounds
+# ~5-10 min (first run includes model loading)
 python3 bench_sts_pipeline.py
 ```
 
-### 脚本功能
+### Script output
 
-`/home/kamjin/scripts/bench_sts_pipeline.py` 输出：
+`/home/kamjin/scripts/bench_sts_pipeline.py` outputs:
 
-- **GPU 信息** — PyTorch / ROCm / 设备 / VRAM / 架构
-- **STT** — Duration / Latency / RTF 表
-- **LLM** — TTFT / Total / 估算 Token / tok/s 表
-- **TTS** — TTFA / Total / Audio 长度 / RTF 表，保存 WAV 到 `/tmp/sts_bench/`
-- **E2E** — STT / LLM_TTFT / LLM_Total / TTS_TTFA / TTS_Total / E2E 感知延迟表
+- **GPU info** — PyTorch / ROCm / device / VRAM / arch
+- **STT** — Duration / Latency / RTF table
+- **LLM** — TTFT / Total / estimated tokens / tok/s table
+- **TTS** — TTFA / Total / Audio length / RTF table; saves WAVs to `/tmp/sts_bench/`
+- **E2E** — STT / LLM_TTFT / LLM_Total / TTS_TTFA / TTS_Total / E2E perceived latency table
 
-### 验证语音质量
+### Validating audio quality
 
-TTS 测试自动保存生成的音频到 `/tmp/sts_bench/tts_N.wav`，可直接播放听感。
+TTS tests auto-save generated audio to `/tmp/sts_bench/tts_N.wav` — play them to evaluate quality.
 
-要测 STT 真实效果，可用 `arecord` 录一段中文，再用脚本喂入：
+For real STT quality, record Chinese with `arecord` and feed the WAV into the script:
 
 ```bash
 arecord -f S16_LE -r 16000 -d 3 test.wav
-# 改造脚本把 gen_silent_wav() 替换为加载 test.wav
+# Modify the script to load test.wav instead of gen_silent_wav()
 ```
+
+### LLM model TTFT comparison
+
+`/home/kamjin/scripts/bench_llm_models.py` measures TTFT across multiple LLM models. Use this when evaluating alternatives to `Gemma-4-E4B-instruct`.
 
 ---
 
-## 调优方向
+## Tuning directions
 
-按收益从高到低排序：
+Ordered by expected benefit.
 
-### 1. 降低 LLM TTFT（边际收益已很小）
+### 1. Reduce LLM TTFT (marginal benefit remaining)
 
-**实测发现**：当前 `Gemma-4-E4B-instruct` 稳态 TTFT 仅 **50ms**——基本无感，不需要换模型。
+**Measured finding**: `Gemma-4-E4B-instruct` steady-state TTFT is only **50 ms** — essentially free. Switching models is **not** worthwhile.
 
-**LLM 选型实测对比**（2026-06-04，llama-swap 8101 端口，3 prompt 平均）：
+**LLM model comparison** (2026-06-04, llama-swap 8101, 3-prompt average):
 
-| 模型 | 冷启动 | 稳态 TTFT | tok/s | 备注 |
+| Model | Cold start | Steady-state TTFT | tok/s | Notes |
 |---|---|---|---|---|
-| **Gemma-4-E4B-instruct (当前)** | 16.97s | **0.05s** | 37.1 | TTFT 最快，性价比最优 |
-| GPT-OSS-20B | 0.46s | 0.39s | 64.8 | 吞吐 2x，但 TTFT 慢 8x |
-| Qwen3.6-35B-A3B-instruct (MoE) | 28.9s | 0.18s | 45.3 | 综合接近，长答案更优 |
-| Qwen3.5-4b-FLM-instruct (NPU) | 8.36s | 1.20s | 12.7 | **NPU 反而更慢** |
-| Step-3.5-Flash-normal | 81.9s | 3.5s+ | 0 | 返回 0 tokens，坏掉 |
-| Gemma-4-E2B (instruct/普通/thinking) | — | — | — | **启动失败** `upstream command exited prematurely` |
+| **Gemma-4-E4B-instruct (current)** | 16.97 s | **0.05 s** | 37.1 | TTFT champion, best price/perf |
+| GPT-OSS-20B | 0.46 s | 0.39 s | 64.8 | 2× throughput, 8× slower TTFT |
+| Qwen3.6-35B-A3B-instruct (MoE) | 28.9 s | 0.18 s | 45.3 | Balanced; better for long answers |
+| Qwen3.5-4b-FLM-instruct (NPU) | 8.36 s | 1.20 s | 12.7 | **NPU is actually slower** |
+| Step-3.5-Flash-normal | 81.9 s | 3.5 s+ | 0 | Returns 0 tokens, broken |
+| Gemma-4-E2B (instruct/base/thinking) | — | — | — | **Fails to start**: `upstream command exited prematurely` |
 
-**结论**：当前 `Gemma-4-E4B-instruct` 在稳态 TTFT 上已经是最佳。**不要换**。
+**Conclusion**: `Gemma-4-E4B-instruct` is already optimal for steady-state TTFT. **Don't switch.**
 
-**如果真的想优化**，以下方向都比换模型更有效：
+If you really want to optimize, these are more effective than switching models:
 
-**a) 启用 prompt prefix cache**（推荐）
+**a) Enable prompt prefix cache** (recommended)
 
-llama-swap / vLLM 支持相同 system prompt 复用 KV cache。speech-to-speech 每次调用 system prompt 相同，**~30% TTFT 收益**（从 50ms → 35ms，意义不大但聊胜于无）。需要在 llama-swap 端配置。
+llama-swap / vLLM support reusing the KV cache for identical system prompts. speech-to-speech sends the same system prompt every call, so this gives **~30% TTFT gain** (50 ms → 35 ms — small in absolute terms, but easy). Configure on the llama-swap side.
 
-**b) 启动时预热 LLM**（推荐）
+**b) Warm up the LLM at startup** (recommended)
 
-把 llama-swap 17s 冷启动成本从用户感知路径中移除。完整脚本见 [§2.c](#c-预热-tts--llm--stt消除冷启动)。
+Push llama-swap's 17 s cold-start cost off the user's critical path. See the full warmup script in [§2.c](#c-warm-up-tts--llm--stt-remove-cold-start).
 
-**c) 切换到 vLLM / SGLang**（如果 llama-swap 出现瓶颈）
+**c) Switch to vLLM / SGLang** (only if llama-swap becomes a bottleneck)
 
-吞吐和并发能力可能更强，但 vLLM 在 gfx1151 上的兼容性需要评估。**当前不需要**。
+Higher throughput and concurrency, but vLLM's gfx1151 compatibility needs evaluation. **Not needed currently**.
 
-**d) 关闭 thinking / reasoning**（已默认开启）
+**d) Disable thinking / reasoning** (already correct)
 
-当前已使用 `*instruct` 变体，无需调整。**不要**切换到 `*-thinking` 变体——会增加 ~5x 生成时间。
+Already using `*instruct` variants — no action needed. **Do not** switch to `*-thinking` variants — adds ~5× generation time.
 
-### 2. TTS 加速
+### 2. TTS acceleration
 
-**a) 启用 flash-attention — ❌ 不建议 gfx1151 安装**
+**a) flash-attention — ❌ Not recommended for gfx1151**
 
-经过 [ROCm/TheRock#1364](https://github.com/ROCm/TheRock/issues/1364) 和 [TesslateAI/FlashAttentionDist](https://github.com/TesslateAI/FlashAttentionDist) 的调研：
+Based on [ROCm/TheRock#1364](https://github.com/ROCm/TheRock/issues/1364) and [TesslateAI/FlashAttentionDist](https://github.com/TesslateAI/FlashAttentionDist):
 
-| 渠道 | gfx1151 支持 | 备注 |
+| Source | gfx1151 support | Notes |
 |---|---|---|
-| 官方 PyPI `flash-attn` | ❌ 无 wheel，仅 `.tar.gz` | 需 30-60 min 源码编译 |
-| TesslateAI 预编译 | ❌ 仅 gfx90a/gfx942/gfx950 | 数据中心 GPU |
-| TheRock PyTorch SDPA flash | ❌ 运行时禁用 | `hip/sdp_utils.cpp:961` 主动禁用 |
-| 自建 AOTriton 0.11beta | ⚠️ 实验性 | "性能比 nightly 更慢"，需重编 PyTorch |
+| Official PyPI `flash-attn` | ❌ No wheels, only `.tar.gz` | Requires 30-60 min source compile |
+| TesslateAI prebuilt | ❌ gfx90a / gfx942 / gfx950 only | Datacenter GPUs |
+| TheRock PyTorch SDPA flash | ❌ Disabled at runtime | `hip/sdp_utils.cpp:961` actively disables |
+| Self-built AOTriton 0.11beta | ⚠️ Experimental | "Slower than nightly", requires recompiling PyTorch |
 
-**实测**：在 TheRock 2.10.0+rocm7.13 wheel 上：
+**Measured** on TheRock 2.10.0+rocm7.13 wheels:
 
 ```python
 import torch
-print(hasattr(torch, 'ops') and hasattr(torch.ops, 'aotriton'))  # True (C++ 注册)
+print(hasattr(torch, 'ops') and hasattr(torch.ops, 'aotriton'))  # True (C++ registered)
 import importlib.util
-print(importlib.util.find_spec('pyaotriton'))  # None (Python 运行时未打包)
+print(importlib.util.find_spec('pyaotriton'))  # None (Python runtime not packaged)
 ```
 
-`pyaotriton` Python 包在 wheel 中**不存在**（只有 C++ ops 注册），所以 `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` 启用了 ops 但无 backend。SDPA 默认走 math path，**0.20ms @ [2,8,64,64] fp16** 已经很够用。
+The `pyaotriton` Python package is **absent** from the wheel (only C++ ops registered), so `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` enables the ops but provides no backend. SDPA falls back to the math path, which is **0.20 ms @ [2,8,64,64] fp16** — already fast enough.
 
-**结论**：跳过 flash-attn 安装。强行编译 30+ min 大概率失败，或编译出无 gfx1151 HIP kernel 的废包。
+**Conclusion**: skip flash-attn. Compiling 30+ min will likely fail, or produce a useless package without gfx1151 HIP kernels.
 
-**b) 切换到更轻量的 TTS**
+**b) Switch to a lighter TTS**
 
-Qwen3-TTS 1.7B 对中文支持有限（默认 CustomVoice 偏英文）。可选：
+Qwen3-TTS 1.7B has limited Chinese support (the default `CustomVoice` leans English). Alternatives:
 
-- `kokoro` — 速度更快，中文需额外 voice model
-- `CosyVoice` — 中文更优，但 ROCm 兼容性未验证
+- `kokoro` — faster, but Chinese needs an extra voice model
+- `CosyVoice` — better Chinese, ROCm compatibility unverified
 
-修改 `sts_start.sh`：
+Edit `sts_start.sh`:
 
 ```bash
---tts kokoro  # 需先 pip install "speech-to-speech[kokoro]"
+--tts kokoro  # requires pip install "speech-to-speech[kokoro]"
 ```
 
-**c) 预热 TTS + LLM + STT（消除冷启动）**
+**c) Warm up TTS + LLM + STT (eliminate cold start)**
 
-启动时调用一次所有组件，把冷启动成本从用户感知路径中移除：
+Call each component once at startup, removing cold-start from the user's critical path:
 
 ```bash
-# 加到 sts_start.sh 末尾
+# Append to sts_start.sh
 (
-  sleep 5  # 等服务起来
-  # STT 预热
+  sleep 5  # wait for server to come up
+  # STT warmup
   python3 -c "
 import os; os.environ.pop('OPENAI_API_KEY', None)
 import torch
@@ -265,12 +271,12 @@ from speech_to_speech import ParaformerASR
 asr = ParaformerASR()
 print('STT warmup OK')
 " 2>&1 | tail -3
-  # LLM 预热
+  # LLM warmup
   curl -s -X POST http://127.0.0.1:8101/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d '{"model":"Gemma-4-E4B-instruct","messages":[{"role":"user","content":"hi"}],"max_tokens":5}' \
     > /dev/null
-  # TTS 预热（首次会触发 CUDA graph 编译，~12-14s）
+  # TTS warmup (first call triggers CUDA graph compile, ~12-14 s)
   python3 -c "
 import os; os.environ.pop('OPENAI_API_KEY', None)
 from speech_to_speech import Qwen3TTS
@@ -280,107 +286,108 @@ print('TTS warmup OK')
 ) &
 ```
 
-**实测冷启动成本**：STT ~3s + LLM ~17s + TTS ~14s ≈ **34s**。预热后用户感知延迟直接进入稳态。
+**Measured cold-start cost**: STT ~3 s + LLM ~17 s + TTS ~14 s ≈ **34 s**. After warmup, user-perceived latency enters steady state immediately.
 
-### 3. STT 优化
+### 3. STT optimization
 
-STT 已 18-32x 实时，延迟极低，几乎无优化空间。如果要更准的中文：
+STT is already 18–32× real-time with negligible latency; little room to optimize. For better Chinese accuracy, consider:
 
-- `SenseVoice-Small`（2.96% CER，更小更快）— 修改 `sts_start.sh` `--stt sensevoice`
-- 多语种混合场景：`paraformer` + `whisper` 双模型 fallback
+- `SenseVoice-Small` (2.96% CER, smaller, faster) — change `sts_start.sh` to `--stt sensevoice`
+- Mixed-language scenarios: `paraformer` + `whisper` dual-model fallback
 
-### 4. 流式优化（高级）
+### 4. Streaming optimization (advanced)
 
-当前 `TTS` 使用 `non_streaming_mode=True`（一次合成完整文本）。改为流式（边收 LLM chunk 边合成）可将感知延迟再降 30-50%：
+Current TTS uses `non_streaming_mode=True` (synthesizes the full text at once). Switching to streaming (synthesize as LLM chunks arrive) cuts perceived latency another 30–50%:
 
 ```python
-# bench_sts_pipeline.py 中
+# In bench_sts_pipeline.py
 setup_kwargs={"non_streaming_mode": False, "streaming_chunk_size": 8}
 ```
 
-启动脚本需要自定义封装（speech-to-speech CLI 当前不直接暴露此参数）。需要改造 `s2s_pipeline.py`。
+The start script needs a custom wrapper (speech-to-speech CLI doesn't expose this directly). Requires modifying `s2s_pipeline.py`.
 
-### 5. 系统级优化
+### 5. System-level optimizations
 
-| 项目 | 状态 | 说明 |
+| Item | Status | Notes |
 |---|---|---|
-| `GPU_MAX_ALLOC_PERCENT=100` | ✅ 已设 | 允许 VRAM 全量分配 |
-| `GPU_MAX_HEAP_SIZE=100` | ✅ 已设 | 限制 HIP 堆 |
-| `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` | ✅ 已设 | 启用 AOTriton 编译（实际无 backend） |
-| SoX | ⚠️ 未装 | 可选，音频格式转换 |
-| DeepFilterNet | ✅ 已装 | 含 torchaudio 兼容 patch，见下文 |
+| `GPU_MAX_ALLOC_PERCENT=100` | ✅ Set | Allow full VRAM allocation |
+| `GPU_MAX_HEAP_SIZE=100` | ✅ Set | Cap HIP heap |
+| `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` | ✅ Set | Enable AOTriton compile (no backend in practice) |
+| SoX | ⚠️ Not installed | Optional, audio format conversion |
+| DeepFilterNet | ✅ Installed | With torchaudio compat patch, see below |
 
-安装可选依赖：
+Install optional dependencies:
 
 ```bash
-sudo dnf install sox        # 音频格式工具
-# DeepFilterNet 见下方专门章节
+sudo dnf install sox        # audio format tools
+# DeepFilterNet — see dedicated section below
 ```
 
 ---
 
-## 已知问题与 workaround
+## Known issues & workarounds
 
-### 1. `hipErrorInvalidImage` (已修复)
+### 1. `hipErrorInvalidImage` (fixed)
 
-`HSA_OVERRIDE_GFX_VERSION=11.0.0` 反而导致 ROCm 7.13 内核不匹配。
+`HSA_OVERRIDE_GFX_VERSION=11.0.0` actually causes ROCm 7.13 kernel mismatches.
 
-**解决**：从 `sts_start.sh` 移除该变量。详见 [rocm-gfx1151-pytorch-install.md](./rocm-gfx1151-pytorch-install.md)。
+**Fix**: Remove the variable from `sts_start.sh`. See [01-rocm-gfx1151-pytorch-install.md](./01-rocm-gfx1151-pytorch-install.md).
 
-### 2. `hf_transfer` 缺失 (已修复)
+### 2. `hf_transfer` missing (fixed)
 
-TTS 模型下载时 `hf_transfer` 未安装导致 `ValueError`。
+TTS model downloads fail without `hf_transfer`.
 
-**解决**：
+**Fix**:
 
 ```bash
 uv pip install hf_transfer
 ```
 
-### 3. Paraformer 库内 MPS bug (已在测试脚本 workaround)
+### 3. Paraformer in-tree MPS bug (workaround in test script)
 
-`speech_to_speech/paraformer_handler.py:56` 无条件调用 `torch.mps.empty_cache()`，在 ROCm/CUDA 上崩溃。
+`speech_to_speech/paraformer_handler.py:56` calls `torch.mps.empty_cache()` unconditionally and crashes on ROCm/CUDA.
 
-**当前 workaround**：测试脚本头部 monkey-patch（见 `bench_sts_pipeline.py:35-38`）。生产环境需要 patch 源文件或升级 speech-to-speech。
+**Current workaround**: monkey-patch in the test script header (see `bench_sts_pipeline.py:35-38`). Production needs the source file patched or speech-to-speech upgraded.
 
-**根治**：向 speech-to-speech 上游提 issue，或本地 patch：
+**Permanent fix**: file an issue upstream, or apply locally:
 
 ```bash
 sed -i 's/torch.mps.empty_cache()/torch.cuda.empty_cache()/' \
   /home/kamjin/apps/.venv/lib64/python3.12/site-packages/speech_to_speech/STT/paraformer_handler.py
 ```
 
-### 4. MIOpen workspace 警告（无害）
+### 4. MIOpen workspace warning (harmless)
 
 ```
 MIOpen(HIP): Warning [IsEnoughWorkspace] Solver <GemmFwdRest>, workspace required: 41287680, ...
 ```
 
-MIOpen GEMM solver 的 workspace 估计偏差，无功能影响。可通过设置 `MIOPEN_LOG_LEVEL=3` 抑制。
+MIOpen's GEMM solver workspace estimate is off; no functional impact. Suppress with `MIOPEN_LOG_LEVEL=3`.
 
-### 5. 中文 TTS 音色有限
+### 5. Limited Chinese TTS voices
 
-Qwen3-TTS `CustomVoice` 默认以英文/国际化音色为主（`Aiden`, `Vivian` 等），中文音色音质一般。
+Qwen3-TTS `CustomVoice` defaults to English / international voices (`Aiden`, `Vivian`, etc.); Chinese voices sound mediocre.
 
-**建议**：测试 `instruct` 参数调整中文表现，或评估 CosyVoice 等更优的中文 TTS。
+**Suggestion**: tune the `instruct` parameter for Chinese, or evaluate CosyVoice for native Chinese quality.
 
-### 6. WebSocket 客户端未实现
+### 6. No WebSocket client implemented
 
-`ws://0.0.0.0:8765/v1/realtime` 需要 OpenAI Realtime API 兼容的客户端才能对接。常用：
+`ws://0.0.0.0:8765/v1/realtime` needs an OpenAI Realtime API-compatible client. Common options:
 
-- Web 端：LiveKit、Pipecat
-- 桌面端：参考 speech-to-speech 仓库 examples
+- Web: LiveKit, Pipecat
+- Desktop: see the speech-to-speech repo examples
+- **Custom**: the [kamjin3086/reachy_mini_conversation_app](https://github.com/kamjin3086/reachy_mini_conversation_app) fork in this project
 
-### 7. DeepFilterNet + torchaudio 2.10 兼容 patch
+### 7. DeepFilterNet + torchaudio 2.10 compat patch
 
-**问题**：deepfilternet 0.5.6 在 `df/io.py:9` 引用了 `torchaudio.backend.common.AudioMetaData`，但 TheRock 编译的 `torchaudio 2.10.0+rocm7.13` **移除了 `torchaudio.backend` 子包**，导致导入失败：
+**Problem**: deepfilternet 0.5.6 references `torchaudio.backend.common.AudioMetaData` in `df/io.py:9`, but the TheRock-built `torchaudio 2.10.0+rocm7.13` **removed the `torchaudio.backend` subpackage**, so import fails:
 
 ```python
 >>> from df.enhance import init_df
 ModuleNotFoundError: No module named 'torchaudio.backend'
 ```
 
-**当前 workaround**：已在 `df/io.py` 加上 `try/except` fallback，导入时回退到 `Any`：
+**Current workaround**: `try/except` fallback added in `df/io.py` so the import degrades to `Any`:
 
 ```python
 try:
@@ -389,78 +396,78 @@ except ImportError:
     AudioMetaData = Any  # type: ignore[assignment,misc]
 ```
 
-**已验证**：1s 音频降噪在 ROCm 上 GPU 端到端跑通：
+**Verified**: 1 s audio denoised end-to-end on ROCm:
 
 ```
 input:  shape=[1, 48000], peak=1.766
-output: shape=[1, 48000], peak=0.318  (成功降噪)
-RT:     2.33s（首次，含 cuDNN 编译；后续 < 0.5s）
+output: shape=[1, 48000], peak=0.318  (denoising succeeded)
+RT:     2.33 s (first call, includes cuDNN compile; subsequent < 0.5 s)
 ```
 
-**重新安装后重新应用 patch**（升级 deepfilternet / 重装 venv 时）：
+**Re-apply after reinstall** (when upgrading deepfilternet or recreating the venv):
 
 ```bash
-# 用 sed 一行修复
+# One-liner sed fix
 sed -i 's/^from torchaudio.backend.common import AudioMetaData$/try:\n    from torchaudio.backend.common import AudioMetaData  # type: ignore[attr-defined]\nexcept ImportError:\n    AudioMetaData = Any  # type: ignore[assignment,misc]/' \
   /home/kamjin/apps/.venv/lib64/python3.12/site-packages/df/io.py
 ```
 
-或手动编辑 `df/io.py`，将第 9 行替换为上面的 `try/except` 块。
+Or manually edit `df/io.py`, replacing line 9 with the `try/except` block above.
 
-**根本解决**：deepfilternet 上游 issue/PR，或等待兼容 torchaudio 2.10+ 的新版本。
+**Permanent fix**: file an issue/PR upstream, or wait for a deepfilternet release that supports torchaudio 2.10+.
 
-### 8. flash-attn 未安装（决策记录）
+### 8. flash-attn not installed (decision record)
 
-详见 [调优方向 §2.a](#2-tts-加速)。决策依据：gfx1151 上游无 HIP flash kernel 优化，强行编译 30+ min 大概率产出无用的包，且会破坏 venv 一致性。
+See [Tuning §2.a](#a-flash-attention--not-recommended-for-gfx1151). Rationale: gfx1151 has no upstream HIP flash kernel support; forcing a 30+ min compile would likely produce a useless package and risk breaking the venv.
 
 ---
 
-## 可替换组件选型
+## Component alternatives
 
-### STT 备选
+### STT alternatives
 
-| 模型 | 中文 CER | 速度 | ROCm | 备注 |
+| Model | Chinese CER | Speed | ROCm | Notes |
 |---|---|---|---|---|
-| **Paraformer-zh** (当前) | 1.95% | 18-32x | ✅ | 中文最优，库兼容良好 |
-| SenseVoice-Small | 2.96% | ~170x | ✅ | 更小更快，多语种 |
-| faster-whisper large-v3 | 5.14% | 9x | ⚠️ | 多语种通用，中文较弱 |
+| **Paraformer-zh** (current) | 1.95% | 18-32× | ✅ | Best Chinese, good library compat |
+| SenseVoice-Small | 2.96% | ~170× | ✅ | Smaller, faster, multilingual |
+| faster-whisper large-v3 | 5.14% | 9× | ⚠️ | Multilingual general, weaker Chinese |
 
-### TTS 备选
+### TTS alternatives
 
-| 模型 | 中文音质 | 速度 | ROCm | 备注 |
+| Model | Chinese quality | Speed | ROCm | Notes |
 |---|---|---|---|---|
-| **Qwen3-TTS** (当前) | 中 | 慢 | ✅ | 库默认，英文向 |
-| Kokoro | 中 | 快 | ✅ | 中需额外 voice |
-| CosyVoice 2 | 高 | 中 | ⚠️ 未测 | 中文原生，需评估 ROCm |
-| ChatTTS | 中 | 中 | ⚠️ | 需 `pip install speech-to-speech[chattts]` |
+| **Qwen3-TTS** (current) | Medium | Slow | ✅ | Library default, English-leaning |
+| Kokoro | Medium | Fast | ✅ | Needs extra voice for Chinese |
+| CosyVoice 2 | High | Medium | ⚠️ Untested | Native Chinese, needs ROCm eval |
+| ChatTTS | Medium | Medium | ⚠️ | Requires `pip install speech-to-speech[chattts]` |
 
-### LLM 备选
+### LLM alternatives
 
-`llama-swap` 管理的全部模型都可用，编辑 `sts_start.sh` 的 `--model_name`（**改完需重启 pipeline**）。
+All llama-swap-managed models are available; edit `--model_name` in `sts_start.sh` (a **restart of the pipeline is required** after the change).
 
-**实测数据**（2026-06-04，3 prompt 平均，稳态）：
+**Measured data** (2026-06-04, 3-prompt average, steady state):
 
-| 模型 | 稳态 TTFT | tok/s | 推荐场景 |
+| Model | Steady-state TTFT | tok/s | Recommended for |
 |---|---|---|---|
-| **Gemma-4-E4B-instruct (当前)** | **0.05s** | 37.1 | 默认首选，对话 TTFT 之王 |
-| GPT-OSS-20B | 0.39s | 64.8 | 适合长答案（吞吐快），TTFT 略差 |
-| Qwen3.6-35B-A3B-instruct | 0.18s | 45.3 | 综合接近，长答案更优 |
-| Qwen3.6-27B-instruct | — | — | 慢（27B），未测稳态 |
-| Gemma-4-E2B-instruct | — | — | ❌ **启动失败** |
-| Gemma-4-E2B-thinking | — | — | ❌ **启动失败** |
-| Qwen3.5-4b-FLM-instruct | 1.20s | 12.7 | ❌ NPU 反而更慢 |
-| Qwen3.5-9b-FLM-instruct | — | — | ⚠️ NPU 一致偏慢，未详测 |
-| Step-3.5-Flash-normal | 3.5s+ | 0 | ❌ 返回 0 tokens，坏掉 |
-| OmniCoder-9B | — | — | 编程专用 |
-| MiroThinker-1.7-mini | — | — | Agentic 工具调用 |
+| **Gemma-4-E4B-instruct (current)** | **0.05 s** | 37.1 | Default — TTFT king for conversation |
+| GPT-OSS-20B | 0.39 s | 64.8 | Long answers (faster throughput), TTFT slightly worse |
+| Qwen3.6-35B-A3B-instruct | 0.18 s | 45.3 | Balanced, better for long answers |
+| Qwen3.6-27B-instruct | — | — | Slow (27B), steady state not measured |
+| Gemma-4-E2B-instruct | — | — | ❌ **Fails to start** |
+| Gemma-4-E2B-thinking | — | — | ❌ **Fails to start** |
+| Qwen3.5-4b-FLM-instruct | 1.20 s | 12.7 | ❌ NPU is actually slower |
+| Qwen3.5-9b-FLM-instruct | — | — | ⚠️ NPU consistently slow, not measured in detail |
+| Step-3.5-Flash-normal | 3.5 s+ | 0 | ❌ Returns 0 tokens, broken |
+| OmniCoder-9B | — | — | Code-specialized |
+| MiroThinker-1.7-mini | — | — | Agentic, tool-calling |
 
-**修改方法**：
+**To switch**:
 
 ```bash
-# 编辑 sts_start.sh
+# Edit sts_start.sh
 sed -i 's/--model_name .*/--model_name GPT-OSS-20B/' /home/kamjin/sts_start.sh
 
-# 重启 pipeline（llama-swap 不用重启）
+# Restart the pipeline (llama-swap does not need to restart)
 pkill -f speech-to-speech
 sleep 2
 ./sts_start.sh
@@ -468,37 +475,37 @@ sleep 2
 
 ---
 
-## 日常运维
+## Day-to-day operations
 
-### 启动 / 停止
+### Start / stop
 
 ```bash
-# 启动
+# Start
 ./sts_start.sh
 
-# 停止
+# Stop
 pkill -f speech-to-speech
 
-# 查看状态
-curl -s http://127.0.0.1:8765/v1/realtime  # WebSocket (需 ws 客户端)
+# Check status
+curl -s http://127.0.0.1:8765/v1/realtime  # WebSocket (needs ws client)
 ps aux | grep speech-to-speech
 ```
 
-### 日志位置
+### Log location
 
-speech-to-speech 本身输出到 stdout/stderr。建议重定向：
+speech-to-speech outputs to stdout/stderr. Recommended to redirect:
 
 ```bash
 nohup ./sts_start.sh > /tmp/sts.log 2>&1 &
 ```
 
-### llama-swap 健康检查
+### llama-swap health check
 
 ```bash
 curl -s http://127.0.0.1:8101/v1/models | jq '.data[].id'
 ```
 
-### 重启 pipeline
+### Restart pipeline
 
 ```bash
 pkill -f speech-to-speech
@@ -506,100 +513,100 @@ sleep 2
 ./sts_start.sh
 ```
 
-### 重置模型缓存（如果出错）
+### Reset model cache (on error)
 
 ```bash
-# 保留缓存
+# Inspect cache
 ls ~/.cache/modelscope/hub/
-ls ~/.cache/DeepFilterNet/   # DeepFilterNet 3 权重
+ls ~/.cache/DeepFilterNet/   # DeepFilterNet 3 weights
 ls ~/.cache/huggingface/hub/
 
-# 清空（下次启动会重新下载）
+# Clear (will re-download next launch)
 rm -rf ~/.cache/modelscope/hub/iic/
 rm -rf ~/.cache/huggingface/hub/models--Qwen--Qwen3-TTS*
-rm -rf ~/.cache/DeepFilterNet/  # DeepFilterNet 3 权重
+rm -rf ~/.cache/DeepFilterNet/  # DeepFilterNet 3 weights
 ```
 
-### 包依赖注记（重要）
+### Package dependency notes (important)
 
-`deepfilternet 0.5.6` 安装时强制降级了两个间接依赖，**torch 仍能正常工作**：
+`deepfilternet 0.5.6` forced two downgrades on install, **torch still works**:
 
-| 包 | 当前版本 | 原版本 | 原因 |
+| Package | Current | Previous | Reason |
 |---|---|---|---|
-| numpy | 1.26.4 | 2.4.x | deepfilternet pin numpy<2 |
-| packaging | 23.2 | 25+ | deepfilternet 间接依赖 |
+| numpy | 1.26.4 | 2.4.x | deepfilternet pins `numpy<2` |
+| packaging | 23.2 | 25+ | deepfilternet indirect dependency |
 
-**已验证**：torch 2.10.0+rocm7.13 GPU 计算、Paraformer、Qwen3-TTS 全部正常。
+**Verified**: torch 2.10.0+rocm7.13 GPU compute, Paraformer, Qwen3-TTS all work.
 
-**如需恢复 numpy 2.x**（如升级 torch 时）：
+**To restore numpy 2.x** (e.g. when upgrading torch):
 
 ```bash
 source /home/kamjin/apps/.venv/bin/activate
 uv pip install "numpy>=2.0" --no-deps
-# 验证
+# Verify
 python3 -c "import torch; a=torch.randn(10,device='cuda'); print(a.sum().item())"
-# 验证 deepfilternet
+# Verify deepfilternet
 python3 -c "from df.enhance import init_df; init_df()"
 ```
 
-如果 deepfilternet 失效但 torch 必须用 numpy 2.x，二选一。
+If deepfilternet breaks but you must use numpy 2.x with torch, pick one.
 
 ---
 
-## 未来工作
+## Future work
 
-### 短期（1-2 周）
+### Short term (1–2 weeks)
 
-- [x] ~~安装 SoX、DeepFilterNet（可选依赖）~~ — DeepFilterNet 已装（含 patch），SoX 未装
-- [x] ~~尝试 `Gemma-4-E2B-instruct` 对比 TTFT 改善~~ — **失败**，3 个变体（instruct / 普通 / thinking）全部 `upstream command exited prematurely`，llama-swap 服务端问题，待配置方修复
-- [x] ~~评估 llama-swap 各模型 TTFT~~ — 7 个模型实测，**当前 E4B-instruct 是稳态 TTFT 最优**，不要换
-- [ ] 加 **LLM 预热** 到 `sts_start.sh`（消除 17s 冷启动）
-- [ ] 评估 `CosyVoice 2` 中文 TTS 质量（需 ROCm 兼容性测试）
-- [ ] 改造 `TTS` 为流式（`non_streaming_mode=False`）
-- [ ] 写一个 OpenAI Realtime API 兼容的 Web 客户端（HTML+JS）
-- [ ] 向 deepfilternet 上游提 issue（torchaudio.backend 兼容性）
-- [ ] 向 llama-swap 维护方提 issue（Gemma-4-E2B 启动失败）
+- [x] ~~Install SoX, DeepFilterNet (optional deps)~~ — DeepFilterNet installed (with patch), SoX not
+- [x] ~~Try `Gemma-4-E2B-instruct` for TTFT improvement~~ — **Failed**: all 3 variants (`instruct` / `base` / `thinking`) error with `upstream command exited prematurely`; llama-swap server-side issue, awaiting fix from config owner
+- [x] ~~Benchmark llama-swap models for TTFT~~ — 7 models tested, **Gemma-4-E4B-instruct is steady-state TTFT optimal**, do not switch
+- [ ] Add **LLM warmup** to `sts_start.sh` (eliminate 17 s cold start)
+- [ ] Evaluate `CosyVoice 2` Chinese TTS quality (ROCm compat test needed)
+- [ ] Refactor TTS to streaming (`non_streaming_mode=False`)
+- [ ] Build an OpenAI Realtime API-compatible web client (HTML+JS)
+- [ ] File issue on deepfilternet upstream (torchaudio.backend compat)
+- [ ] File issue on llama-swap maintainer (Gemma-4-E2B startup failure)
 
-### 中期（1 个月）
+### Medium term (1 month)
 
-- [ ] 部署 Web 客户端，支持浏览器语音对话
-- [ ] 添加可观测性：prometheus metrics / OpenTelemetry
-- [ ] 多用户并发测试：当前 pipeline 是单 session
-- [ ] 调优 llama-swap 推理参数（temperature、repetition_penalty 等）
+- [ ] Deploy web client, browser-based voice conversation
+- [ ] Add observability: prometheus metrics / OpenTelemetry
+- [ ] Multi-user concurrency test: current pipeline is single-session
+- [ ] Tune llama-swap inference parameters (temperature, repetition_penalty, etc.)
 
-### 长期
+### Long term
 
-- [ ] 评估升级到 vLLM / SGLang 替代 llama-swap
-- [ ] ~~探索 ROCm Flash Attention 2/3（性能增益）~~ — **不可行**，gfx1151 无上游支持
-- [ ] ~~评估 aotriton 内核~~ — **无 Python backend**，C++ ops 已注册但运行时缺失
-- [ ] 等待 speech-to-speech 上游修复 MPS bug，移除 monkey-patch
-- [ ] 升级到 Qwen3-TTS VoiceDesign / Base 模型支持自定义声音
-- [ ] 等待 TheRock wheel 修复 `pyaotriton` Python 打包问题
+- [ ] Evaluate vLLM / SGLang as llama-swap replacement
+- [ ] ~~ROCm Flash Attention 2/3~~ — **Not viable**: no upstream gfx1151 support
+- [ ] ~~AOTriton kernels~~ — **No Python backend**: C++ ops registered but Python runtime missing
+- [ ] Wait for speech-to-speech upstream to fix MPS bug, remove monkey-patch
+- [ ] Upgrade to Qwen3-TTS VoiceDesign / Base models for custom voices
+- [ ] Wait for TheRock wheels to fix `pyaotriton` Python packaging
 
 ---
 
-## 故障排查速查
+## Quick troubleshooting
 
-| 症状 | 原因 | 解决 |
+| Symptom | Cause | Fix |
 |---|---|---|
-| 启动报 `hipErrorInvalidImage` | HSA override 残留 | 移除 `HSA_OVERRIDE_GFX_VERSION` |
-| `HF_HUB_ENABLE_HF_TRANSFER` 报错 | hf_transfer 未装 | `uv pip install hf_transfer` |
-| OpenAI client 报 API key 缺失 | env 冲突 | 确认 `OPENAI_API_KEY` 未设置 |
-| Paraformer 报 MPS 错误 | 库 bug | 用 patch 脚本或 monkey-patch |
-| DeepFilterNet 报 `torchaudio.backend` 找不到 | 0.5.6 与 torchaudio 2.10 不兼容 | 应用 [§7 patch](#7-deepfilternet--torchaudio-210-兼容-patch) |
-| MIOpen workspace 警告 | 估计偏差 | 忽略，或 `MIOPEN_LOG_LEVEL=3` |
-| LLM 401 invalid_api_key | 客户端 env 干扰 | 确认 `OPENAI_API_KEY=""` 或未设 |
-| TTS 首次 12s+ | CUDA graph 编译 | 预热即可（不可消除） |
-| SoX 警告 | sox 未装 | `sudo dnf install sox` |
-| `pip` 指向 Python 3.14 不是 venv | `~/.local/bin/pip` 在 PATH 中抢先 | 用 `uv pip` 或 `/home/kamjin/apps/.venv/bin/python -m pip` |
+| Startup error `hipErrorInvalidImage` | HSA override lingering | Remove `HSA_OVERRIDE_GFX_VERSION` |
+| `HF_HUB_ENABLE_HF_TRANSFER` error | hf_transfer not installed | `uv pip install hf_transfer` |
+| OpenAI client reports missing API key | env conflict | Make sure `OPENAI_API_KEY` is unset |
+| Paraformer reports MPS error | library bug | Use the patch script or monkey-patch |
+| DeepFilterNet reports `torchaudio.backend` not found | 0.5.6 incompatible with torchaudio 2.10 | Apply [§7 patch](#7-deepfilternet--torchaudio-210-compat-patch) |
+| MIOpen workspace warning | estimate off | Ignore, or `MIOPEN_LOG_LEVEL=3` |
+| LLM 401 invalid_api_key | client env interference | Confirm `OPENAI_API_KEY=""` or unset |
+| First TTS call 12 s+ | CUDA graph compile | Warm up (cannot be eliminated) |
+| SoX warning | sox not installed | `sudo dnf install sox` |
+| `pip` points to Python 3.14, not venv | `~/.local/bin/pip` in PATH takes precedence | Use `uv pip` or `/home/kamjin/apps/.venv/bin/python -m pip` |
 
 ---
 
-## 参考链接
+## References
 
-- 仓库：[speech-to-speech](https://github.com/facebookresearch/speech-to-speech)
-- 安装文档：[speech-to-speech-install.md](./speech-to-speech-install.md)
-- ROCm 文档：[rocm-gfx1151-pytorch-install.md](./rocm-gfx1151-pytorch-install.md)
-- 测试脚本：`/home/kamjin/scripts/bench_sts_pipeline.py`（端到端）、`/home/kamjin/scripts/bench_llm_models.py`（LLM TTFT 对比）
-- 启动脚本：`/home/kamjin/sts_start.sh`
+- Repository: [speech-to-speech](https://github.com/facebookresearch/speech-to-speech)
+- Install doc: [02-speech-to-speech-install.md](./02-speech-to-speech-install.md)
+- ROCm doc: [01-rocm-gfx1151-pytorch-install.md](./01-rocm-gfx1151-pytorch-install.md)
+- Benchmark scripts: `/home/kamjin/scripts/bench_sts_pipeline.py` (end-to-end), `/home/kamjin/scripts/bench_llm_models.py` (LLM TTFT comparison)
+- Start script: `/home/kamjin/sts_start.sh`
 - llama-swap: `http://127.0.0.1:8101/v1`

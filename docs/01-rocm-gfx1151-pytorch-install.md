@@ -1,66 +1,67 @@
-# Strix Halo (Radeon 8060S) PyTorch ROCm 安装备忘
+# Strix Halo (Radeon 8060S) PyTorch ROCm Installation Notes
 
-## 硬件信息
+> [中文版](01-rocm-gfx1151-pytorch-install.zh.md) · [← Back to README](../README.md)
 
-- **系统**: Fedora 44
+## Hardware
 
+- **System**: Fedora 44
 - **GPU**: AMD Ryzen AI Max+ 395 w/ Radeon 8060S Graphics
-- **架构**: gfx1151 (Strix Halo)
-- **内存**: 共享系统内存 (UMA)，非独立显存
+- **Architecture**: gfx1151 (Strix Halo)
+- **Memory**: Shared system memory (UMA), no discrete VRAM
 - **PCI ID**: 1002:1586
 
-## 核心问题：Strix Halo 的 ROCm 支持很特殊
+## The core issue: ROCm support for Strix Halo is unusual
 
-Strix Halo (gfx1151) 是 AMD 的 APU（集成显卡），其 ROCm 支持经历了多次迭代，**不同 ROCm 版本的兼容性差异极大**。选错版本会直接段错误 (SIGSEGV)。
+Strix Halo (gfx1151) is an AMD APU (integrated GPU). Its ROCm support has gone through several iterations, and **compatibility varies dramatically across ROCm versions**. Picking the wrong one will segfault (SIGSEGV) immediately.
 
-### 版本线说明
+### Version line overview
 
-ROCm 目前有**两条并行发布线**：
+ROCm currently has **two parallel release lines**:
 
-| 版本线 | 定位 | gfx1151 支持 | 说明 |
+| Version line | Positioning | gfx1151 support | Notes |
 |---|---|---|---|
-| **ROCm 7.0 ~ 7.2** (生产流) | 生产级稳定 | ❌ 兼容性矩阵中**没有** gfx1151 | 传统 monolithic 构建，稳定但 APU 支持滞后 |
-| **ROCm 7.11+** (TheRock) | 技术预览 | ✅ **原生支持** gfx1151 | 新构建系统 TheRock，APU 支持优先 |
+| **ROCm 7.0–7.2** (production) | Production-grade, stable | ❌ gfx1151 **not** in compatibility matrix | Traditional monolithic build; stable but APU support lags |
+| **ROCm 7.11+** (TheRock) | Technical preview | ✅ **Native** gfx1151 support | New TheRock build system; APU priority |
 
-### 为什么 PyTorch.org 的 ROCm 不行
+### Why PyTorch.org's ROCm wheels don't work
 
 ```
-PyTorch 2.12.0+rocm7.1  ← 从 PyTorch.org 安装
+PyTorch 2.12.0+rocm7.1  ← installed from PyTorch.org
 ```
 
-- 基于 **ROCm 7.1**，该版本对 gfx1151 有 **VGPR 计数 bug**（Issue #2991）
-- 表现：`torch.cuda.is_available()` 返回 True，但任何 GPU 张量分配都会 **SIGSEGV**
-- 与 Python 版本无关（3.12/3.13/3.14 都有此问题）
+- Built on **ROCm 7.1**, which has a **VGPR count bug** for gfx1151 (Issue #2991)
+- Symptom: `torch.cuda.is_available()` returns `True`, but **any** GPU tensor allocation SIGSEGVs
+- Independent of Python version (3.12 / 3.13 / 3.14 all affected)
 
-### 修复方案
+### The fix
 
-**必须使用 TheRock 构建的 wheels**，它们包含 gfx1151 专属修复：
+**You must use TheRock-built wheels**, which ship gfx1151-specific fixes:
 
 ```bash
 pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ torch torchaudio torchvision
 ```
 
-## 当前安装配置
+## Current install configuration
 
 ```
 Python:    3.12.13
 PyTorch:   2.10.0+rocm7.13.0a20260513
 ROCm/HIP:  7.13.26183
-架构:      gfx1151
+Arch:      gfx1151
 ```
 
-### 安装命令
+### Install commands
 
 ```bash
-# 1. 创建 Python 3.12 虚拟环境
+# 1. Create Python 3.12 virtual environment
 uv venv /home/kamjin/apps/.venv --python 3.12
 
-# 2. 从 TheRock gfx1151 索引安装
+# 2. Install from TheRock gfx1151 index
 uv pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ \
   torch torchaudio torchvision
 ```
 
-### 验证安装
+### Verify the install
 
 ```bash
 python3 -c "
@@ -71,7 +72,7 @@ print('CUDA available:', torch.cuda.is_available())
 print('Device:', torch.cuda.get_device_name(0))
 print('Arch:', torch.cuda.get_arch_list())
 
-# 功能测试
+# Functional test
 x = torch.randn(100, 100, device='cuda')
 y = torch.randn(100, 100, device='cuda')
 z = x @ y
@@ -80,73 +81,73 @@ print('ALL TESTS PASSED')
 "
 ```
 
-## ROCm 7.13 已修复的问题
+## Issues fixed in ROCm 7.13
 
-- **VGPR 计数 bug (Issue #2991)**：ROCm 7.13 (TheRock) 已原生修复 gfx1151 VGPR 问题，不再需要 `HSA_OVERRIDE_GFX_VERSION` 覆盖
-- **使用 override 的副作用**：`HSA_OVERRIDE_GFX_VERSION=11.0.0` 会导致 `hipErrorInvalidImage` 内核架构不匹配错误（内核编译为 gfx1100，但硬件是 gfx1151）
-- **测试验证**：
-  - 有 override → `HIP error: device kernel image is invalid`
-  - 无 override → 所有 GPU 操作正常
-- **当前配置**：移除 `HSA_OVERRIDE_GFX_VERSION`，保留 `GPU_MAX_ALLOC_PERCENT=100`、`GPU_MAX_HEAP_SIZE=100`、`TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`
+- **VGPR count bug (Issue #2991)**: ROCm 7.13 (TheRock) fixes gfx1151 VGPR handling natively — no more need for `HSA_OVERRIDE_GFX_VERSION`
+- **Side effect of using the override**: `HSA_OVERRIDE_GFX_VERSION=11.0.0` triggers `hipErrorInvalidImage` (kernels compiled for gfx1100 don't match gfx1151 hardware)
+- **Test result**:
+  - With override → `HIP error: device kernel image is invalid`
+  - Without override → all GPU operations work
+- **Current config**: `HSA_OVERRIDE_GFX_VERSION` removed; keep `GPU_MAX_ALLOC_PERCENT=100`, `GPU_MAX_HEAP_SIZE=100`, `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1`
 
-## 已知问题和 workaround
+## Known issues and workarounds
 
-### 1. MIOpen solver database 文件不可读
+### 1. MIOpen solver database file unreadable
 
 ```
 MIOpen(HIP): Warning [ParseAndLoadDb] File is unreadable:
   ".../gfx1151_20.HIP.fdb.txt"
 ```
 
-- **影响**: 无功能影响，只是 solver 缓存文件
-- **原因**: TheRock 包中打包的 fdb 文件格式可能不匹配当前 MIOpen 版本
-- **处理**: 忽略即可，MIOpen 会自动重建
+- **Impact**: None — just a solver cache file
+- **Cause**: fdb file format in TheRock package may not match the current MIOpen version
+- **Action**: Ignore; MIOpen rebuilds automatically
 
-### 2. XNACK 警告
+### 2. XNACK warning
 
 ```
 warning: xnack 'Off' was requested for a processor that does not support it!
 ```
 
-- **影响**: 无功能影响
-- **原因**: gfx1151 不支持 XNACK，但 ROCm 默认请求
-- **处理**: 忽略
+- **Impact**: None
+- **Cause**: gfx1151 doesn't support XNACK, but ROCm requests it by default
+- **Action**: Ignore
 
-### 3. VRAM 分配策略（大内存场景）
+### 3. VRAM allocation strategy (large-UMA scenario)
 
-当系统设置大 UMA 内存（如 96GB）时，PyTorch 可能跳过 VRAM 直接使用共享内存，导致 OOM。
+With large UMA memory (e.g. 96 GB), PyTorch may skip the discrete-VRAM-style allocator and go straight to shared memory, causing apparent OOM.
 
-- ** workaround**: 设置 `PYTORCH_NO_CUDA_MEMORY_CACHING=1` 或减少分配的 VRAM 大小
+- **Workaround**: Set `PYTORCH_NO_CUDA_MEMORY_CACHING=1` or limit per-allocation size
 
-### 4. 内核版本兼容性
+### 4. Kernel version compatibility
 
-- **Linux 6.18.4+**: 需要 TheRock wheels 或内核补丁修复 VGPR 问题
-- **Linux 6.18.3 及以下**: ROCm 7.1 也能工作（VGPR bug 未引入）
+- **Linux 6.18.4+**: Requires TheRock wheels or kernel patches for the VGPR fix
+- **Linux 6.18.3 and earlier**: ROCm 7.1 also works (the VGPR bug wasn't introduced yet)
 
-## 常用推理框架兼容性
+## Inference framework compatibility
 
-| 框架 | ROCm 要求 | 推荐版本 | 备注 |
+| Framework | ROCm requirement | Recommended version | Notes |
 |---|---|---|---|
-| whisper.cpp | GGML HIP | ROCm 7.2+ | 绕过 rocWMMA，7.2 即可 |
-| whisper.pytorch | PyTorch ROCm | TheRock 7.11+ | 需要 PyTorch GPU |
-| Coqui TTS / XTTS | PyTorch ROCm | TheRock 7.11+ | 有已知 kernel 问题 |
+| whisper.cpp | GGML HIP | ROCm 7.2+ | Bypasses rocWMMA, 7.2 is enough |
+| whisper.pytorch | PyTorch ROCm | TheRock 7.11+ | Needs PyTorch GPU |
+| Coqui TTS / XTTS | PyTorch ROCm | TheRock 7.11+ | Has known kernel issues |
 | SpeechBrain | PyTorch ROCm | TheRock 7.11+ | — |
-| llama.cpp | GGML HIP | ROCm 7.2+ | 已验证可用 |
+| llama.cpp | GGML HIP | ROCm 7.2+ | Verified working |
 
-## 快速参考
+## Quick reference
 
-### 安装
+### Install
 
 ```bash
-# 创建环境
+# Create environment
 uv venv /path/to/venv --python 3.12
 
-# 安装 PyTorch ROCm (gfx1151)
+# Install PyTorch ROCm (gfx1151)
 uv pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ \
   torch torchaudio torchvision
 ```
 
-### 验证
+### Verify
 
 ```python
 import torch
@@ -157,21 +158,21 @@ x = torch.randn(10, 10, device="cuda")
 assert x.device.type == "cuda"
 ```
 
-### 常见错误
+### Common errors
 
-| 错误 | 原因 | 解决 |
+| Error | Cause | Fix |
 |---|---|---|
-| SIGSEGV on tensor alloc | 用了 PyTorch.org 的 rocm7.1 wheels | 换 TheRock gfx1151 wheels |
-| `torch.cuda.is_available()` True 但计算崩 | 同上 | 同上 |
-| Flash Attention 不可用 | gfx1151 的 FA 需要额外编译 aotriton | 大多数推理不需要 FA |
-| torchaudio 部分 API 缺失 | TheRock 包的 torchaudio 精简 | 不影响核心功能 |
+| SIGSEGV on tensor allocation | Used PyTorch.org's rocm7.1 wheels | Switch to TheRock gfx1151 wheels |
+| `torch.cuda.is_available()` True but compute crashes | Same as above | Same as above |
+| Flash Attention unavailable | gfx1151's FA requires extra aotriton build | Most inference doesn't need FA |
+| Some torchaudio APIs missing | TheRock's torchaudio is stripped down | Doesn't affect core functionality |
 
-## 参考来源
+## References
 
 - [ROCm/ROCm#5853](https://github.com/ROCm/ROCm/issues/5853) — Strix Halo segfault on VRAM access
 - [ROCm/TheRock#2991](https://github.com/ROCm/TheRock/issues/2991) — gfx1151 VGPR count crash
 - [ROCm/TheRock#3081](https://github.com/ROCm/TheRock/issues/3081) — PyTorch.org wheels crash, TheRock works
 - [ROCm/TheRock#3032](https://github.com/ROCm/TheRock/issues/3032) — VRAM allocation strategy
 - [PyTorch#173367](https://github.com/pytorch/pytorch/issues/173367) — Strix Halo segfault on ROCm 7.1
-- [AMD ROCm 7.11 文档](https://rocm.docs.amd.com/en/7.11.0-preview/)
-- [AMD ROCm 7.2 兼容性矩阵](https://rocmdocs.amd.com/en/develop/compatibility/compatibility-matrix.html)
+- [AMD ROCm 7.11 docs](https://rocm.docs.amd.com/en/7.11.0-preview/)
+- [AMD ROCm 7.2 compatibility matrix](https://rocmdocs.amd.com/en/develop/compatibility/compatibility-matrix.html)

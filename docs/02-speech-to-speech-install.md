@@ -1,119 +1,121 @@
-# Speech-to-Speech 语音 Agent 管道
+# Speech-to-Speech Voice Agent Pipeline
 
-## 硬件与环境
+> [中文版](02-speech-to-speech-install.zh.md) · [← Back to README](../README.md)
 
-| 项目 | 值 |
+## Hardware and environment
+
+| Item | Value |
 |---|---|
-| 系统 | Fedora 44 |
+| System | Fedora 44 |
 | GPU | AMD Ryzen AI Max+ 395 / Radeon 8060S (gfx1151, Strix Halo) |
-| 内存 | 共享系统内存 (UMA) |
+| Memory | Shared system memory (UMA) |
 | Python | 3.12.13 |
-| venv | /home/kamjin/apps/.venv |
+| venv | `/home/kamjin/apps/.venv` |
 | PyTorch | 2.10.0+rocm7.13.0a20260513 (TheRock) |
 | ROCm | 7.13 |
 
-完整 ROCm 安装说明见 [rocm-gfx1151-pytorch-install.md](./rocm-gfx1151-pytorch-install.md)
+Full ROCm installation: [rocm-gfx1151-pytorch-install.md](./01-rocm-gfx1151-pytorch-install.md)
 
-## 管道架构
+## Pipeline architecture
 
 ```
-麦克风 → STT (Paraformer-zh) → LLM (Gemma-4-4B, responses-api) → TTS (Qwen3-TTS) → 扬声器
+microphone → STT (Paraformer-zh) → LLM (Gemma-4-E4B, responses-api) → TTS (Qwen3-TTS) → speaker
 ```
 
-| 组件 | 选择 | 理由 |
+| Component | Choice | Why |
 |---|---|---|
-| **STT** | FunASR Paraformer-zh | 中文 CER 1.95%，内置 VAD + 标点，120x 实时 |
-| **LLM** | Gemma-4-4B (responses-api) | 已有本地服务 127.0.0.1:8101 |
-| **TTS** | Qwen3-TTS (faster-qwen3-tts) | ROCm gfx1151 已实测可用 |
+| **STT** | FunASR Paraformer-zh | Chinese CER 1.95%, built-in VAD + punctuation, 120× real-time |
+| **LLM** | Gemma-4-E4B (responses-api) | Already running locally at 127.0.0.1:8101 |
+| **TTS** | Qwen3-TTS (faster-qwen3-tts) | Verified working on ROCm gfx1151 |
 
-### STT 选型对比
+### STT selection
 
-| 方案 | 中文 CER | GPU 速度 | ROCm 兼容性 | 安装 |
+| Option | Chinese CER | GPU speed | ROCm compat | Install |
 |---|---|---|---|---|
-| **Paraformer-zh** | 1.95% | 120x | PyTorch 直用 | `pip install funasr` |
-| SenseVoice-Small | 2.96% | 170x | PyTorch 直用 | `pip install funasr` |
-| faster-whisper | 5.14% | 9x | CTranslate2 4.7.1+ | `pip install faster-whisper` |
+| **Paraformer-zh** | 1.95% | 120× | PyTorch native | `pip install funasr` |
+| SenseVoice-Small | 2.96% | 170× | PyTorch native | `pip install funasr` |
+| faster-whisper | 5.14% | 9× | CTranslate2 4.7.1+ | `pip install faster-whisper` |
 
-Paraformer-zh 中文准确率最高，且内置 VAD 和标点恢复，是中文场景首选。
+Paraformer-zh wins on Chinese accuracy, with built-in VAD and punctuation restoration. First choice for Chinese scenarios.
 
-### TTS 选型对比
+### TTS selection
 
-| 方案 | 音质 | GPU 速度 | ROCm 兼容性 |
+| Option | Quality | GPU speed | ROCm compat |
 |---|---|---|---|
-| **Qwen3-TTS** | 高 | ~1x (gfx1151) | 已实测可用 |
-| Kokoro | 中 | 快 | 可用 |
+| **Qwen3-TTS** | High | ~1× (gfx1151) | Verified |
+| Kokoro | Medium | Fast | Works |
 
-Qwen3-TTS 音质更好，且已在 gfx1151 上验证可用。
+Qwen3-TTS has better audio quality and is verified working on gfx1151.
 
-## 安装
+## Installation
 
-### 1. PyTorch ROCm 基础
+### 1. PyTorch ROCm base
 
 ```bash
-# 创建 Python 3.12 虚拟环境
+# Create Python 3.12 virtual environment
 uv venv /home/kamjin/apps/.venv --python 3.12
 
-# 从 TheRock gfx1151 索引安装
+# Install from TheRock gfx1151 index
 uv pip install --index-url https://rocm.nightlies.amd.com/v2/gfx1151/ \
   torch torchaudio torchvision
 ```
 
-详见 [rocm-gfx1151-pytorch-install.md](./rocm-gfx1151-pytorch-install.md)
+See [01-rocm-gfx1151-pytorch-install.md](./01-rocm-gfx1151-pytorch-install.md) for details.
 
-### 2. Speech-to-Speech 管道
+### 2. Speech-to-Speech pipeline
 
 ```bash
 source /home/kamjin/apps/.venv/bin/activate
 
-# 安装 speech-to-speech + paraformer STT + funasr + qwen-tts
+# Install speech-to-speech + paraformer STT + funasr + qwen-tts
 uv pip install "speech-to-speech[paraformer]" funasr
 ```
 
-已安装的组件：
+Installed components:
 
-| 包 | 版本 | 用途 |
+| Package | Version | Purpose |
 |---|---|---|
-| speech-to-speech | 0.2.9 | 管道框架 |
-| funasr | 1.3.9 | Paraformer STT 后端 |
-| qwen-tts | 0.1.1 | Qwen3-TTS 后端 |
-| faster-qwen3-tts | 0.2.6 | TTS 推理引擎 |
-| hf-transfer | 0.1.9 | HuggingFace 高速下载 |
+| speech-to-speech | 0.2.9 | Pipeline framework |
+| funasr | 1.3.9 | Paraformer STT backend |
+| qwen-tts | 0.1.1 | Qwen3-TTS backend |
+| faster-qwen3-tts | 0.2.6 | TTS inference engine |
+| hf-transfer | 0.1.9 | HuggingFace fast download |
 
-可选依赖：
+Optional dependencies:
 
-| 包 | 用途 | 安装 | 状态 |
+| Package | Purpose | Install | Status |
 |---|---|---|---|
-| sox | 音频格式转换（可选） | `sudo dnf install sox` | ⚠️ 未装 |
-| DeepFilterNet | 音频降噪增强 | `pip install deepfilternet` | ✅ 已装（需小 patch） |
-| flash-attn | 注意力加速 | **不推荐 gfx1151** | ❌ 跳过 |
+| sox | Audio format conversion (optional) | `sudo dnf install sox` | ⚠️ Not installed |
+| DeepFilterNet | Audio denoising | `pip install deepfilternet` | ✅ Installed (small patch needed) |
+| flash-attn | Attention acceleration | **Not recommended for gfx1151** | ❌ Skipped |
 
-## 环境变量
+## Environment variables
 
-启动脚本 `sts_start.sh` 中设置的 ROCm 环境变量：
+ROCm environment variables set in `sts_start.sh`:
 
-| 变量 | 值 | 作用 |
+| Variable | Value | Purpose |
 |---|---|---|
-| `GPU_MAX_ALLOC_PERCENT` | 100 | 允许 GPU VRAM 全量分配（UMA 共享内存，不限制） |
-| `GPU_MAX_HEAP_SIZE` | 100 | 限制 HIP 最大堆大小（避免 OOM） |
-| `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL` | 1 | 启用 AOTriton 实验性编译 |
+| `GPU_MAX_ALLOC_PERCENT` | 100 | Allow full GPU VRAM allocation (UMA shared memory, don't restrict) |
+| `GPU_MAX_HEAP_SIZE` | 100 | Cap HIP max heap (avoid OOM) |
+| `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL` | 1 | Enable AOTriton experimental compilation |
 
-> **注意**：`HSA_OVERRIDE_GFX_VERSION` 已从启动脚本中移除。ROCm 7.13 (TheRock) 已原生修复 gfx1151 VGPR bug，override 反而会导致 `hipErrorInvalidImage` 内核不匹配错误。
+> **Note**: `HSA_OVERRIDE_GFX_VERSION` has been removed from the start script. ROCm 7.13 (TheRock) fixes the gfx1151 VGPR bug natively — the override actually triggers `hipErrorInvalidImage` from a kernel-architecture mismatch.
 
-## 运行命令
+## Run command
 
 ```bash
 #!/bin/bash
 # Speech-to-Speech pipeline: paraformer (STT) + responses-api (LLM) + qwen3 (TTS)
 # GPU: AMD Radeon 8060S (gfx1151) via ROCm 7.13
-# STT: FunASR Paraformer-zh (中文优化, CER~1.95%, 120x 实时)
-# TTS: faster-qwen3-tts (ROCm 已实测 gfx1151 可用)
-# LLM: responses-api (本地 127.0.0.1:8101)
+# STT: FunASR Paraformer-zh (Chinese-optimized, CER ~1.95%, 120× real-time)
+# TTS: faster-qwen3-tts (verified on ROCm gfx1151)
+# LLM: responses-api (local 127.0.0.1:8101)
 
-# 允许 GPU VRAM 全量分配（UMA 共享内存，不限制）
+# Allow full GPU VRAM allocation (UMA shared memory, don't restrict)
 export GPU_MAX_ALLOC_PERCENT=100
-# 限制 HIP 最大堆大小（避免 OOM）
+# Cap HIP max heap (avoid OOM)
 export GPU_MAX_HEAP_SIZE=100
-# 启用 AOTriton 实验性编译（ROCm 7.11+ PyTorch 性能优化）
+# Enable AOTriton experimental compilation (ROCm 7.11+ PyTorch perf)
 export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 
 unset HF_ENDPOINT
@@ -133,22 +135,22 @@ speech-to-speech \
     --enable_live_transcription
 ```
 
-脚本位置：`/home/kamjin/sts_start.sh`
+Script location: `/home/kamjin/sts_start.sh`
 
-### 参数说明
+### Parameter reference
 
-| 参数 | 值 | 说明 |
+| Parameter | Value | Description |
 |---|---|---|
-| `--stt` | `paraformer` | 使用 FunASR Paraformer STT |
-| `--tts` | `qwen3` | 使用 Qwen3-TTS |
-| `--llm_backend` | `responses-api` | 通过 OpenAI 兼容 API 调用 LLM |
-| `--mode` | `realtime` | 实时语音交互模式 |
-| `--ws_host` | `0.0.0.0` | WebSocket 监听地址 |
-| `--ws_port` | `8765` | WebSocket 端口 |
-| `--language` | `auto` | 自动语言检测 |
-| `--enable_live_transcription` | | 启用实时字幕 |
+| `--stt` | `paraformer` | Use FunASR Paraformer STT |
+| `--tts` | `qwen3` | Use Qwen3-TTS |
+| `--llm_backend` | `responses-api` | Call LLM via OpenAI-compatible API |
+| `--mode` | `realtime` | Real-time voice interaction mode |
+| `--ws_host` | `0.0.0.0` | WebSocket listen address |
+| `--ws_port` | `8765` | WebSocket port |
+| `--language` | `auto` | Auto-detect language |
+| `--enable_live_transcription` | | Enable live subtitles |
 
-## 验证
+## Verification
 
 ```bash
 source /home/kamjin/apps/.venv/bin/activate
@@ -165,15 +167,15 @@ import funasr
 print(f'funasr: {funasr.__version__}')
 
 import qwen_tts
-print(f'qwen-tts: installed')
+print('qwen-tts: installed')
 
-# GPU 功能测试
+# GPU functional test
 x = torch.randn(100, 100, device='cuda')
 print('GPU tensor: OK')
 "
 ```
 
-## 故障排查
+## Troubleshooting
 
 ### HIP `device kernel image is invalid`
 
@@ -181,54 +183,54 @@ print('GPU tensor: OK')
 HIP error: device kernel image is invalid
 ```
 
-- **原因**：`HSA_OVERRIDE_GFX_VERSION=11.0.0` 导致内核架构不匹配
-- **解决**：移除 `HSA_OVERRIDE_GFX_VERSION` 环境变量
-- **根因**：ROCm 7.13 (TheRock) 已原生修复 gfx1151 VGPR bug，override 反而使 ROCm 误识别为 gfx1100
+- **Cause**: `HSA_OVERRIDE_GFX_VERSION=11.0.0` causes a kernel-architecture mismatch
+- **Fix**: Remove the `HSA_OVERRIDE_GFX_VERSION` environment variable
+- **Root cause**: ROCm 7.13 (TheRock) already fixes the gfx1151 VGPR bug natively; the override misidentifies the GPU as gfx1100
 
-### GPU 张量分配失败
+### GPU tensor allocation fails
 
 ```
 SIGSEGV or CUDA error
 ```
 
-- 确认未设置 `HSA_OVERRIDE_GFX_VERSION`（ROCm 7.13 不需要）
-- 确认使用的是 TheRock wheels（非 PyTorch.org）
-- 参考 [rocm-gfx1151-pytorch-install.md](./rocm-gfx1151-pytorch-install.md)
+- Make sure `HSA_OVERRIDE_GFX_VERSION` is not set (not needed for ROCm 7.13)
+- Make sure you are using TheRock wheels (not PyTorch.org)
+- See [01-rocm-gfx1151-pytorch-install.md](./01-rocm-gfx1151-pytorch-install.md)
 
-### Paraformer 模型下载慢
+### Paraformer model download is slow
 
 ```bash
-# 使用 ModelScope 镜像
+# Use ModelScope mirror
 export MODELSCOPE_CACHE=~/.cache/modelscope
-# 或使用 HuggingFace 镜像
+# Or use HuggingFace mirror
 export HF_ENDPOINT=https://hf-mirror.com
 ```
 
-### Qwen3-TTS 推理慢
+### Qwen3-TTS inference is slow
 
-- flash-attn **不建议**安装（详见 [性能调优 - flash-attn](./speech-to-speech-status.md#4-启用-flash-attention)）
-- 当前使用 PyTorch SDPA 默认 backend（math 路径），速度可接受
-- TTS 首次 12-14s 含 CUDA graph 编译，后续降至个位数
+- **Do not install flash-attn** on gfx1151 (see [03 §2.a](03-speech-to-speech-status.md))
+- Currently using PyTorch SDPA default backend (math path); speed is acceptable
+- First TTS call takes 12–14 s (CUDA graph compilation); subsequent calls drop to single-digit seconds
 
-### DeepFilterNet 重新安装后报 `torchaudio.backend.common` 找不到
+### DeepFilterNet: `torchaudio.backend.common` not found after reinstall
 
-- **原因**：deepfilternet 0.5.6 引用了 torchaudio 2.9 之前的 `torchaudio.backend.common.AudioMetaData`，而 TheRock 2.10 wheel 移除了该子包
-- **解决**：重装后重新应用 patch，详见 [运行状态文档 - DeepFilterNet Patch](./speech-to-speech-status.md#deepfilternet-torchaudio-兼容-patch)
+- **Cause**: deepfilternet 0.5.6 references `torchaudio.backend.common.AudioMetaData`, which TheRock 2.10 has removed
+- **Fix**: Re-apply the patch after reinstall — see [03 §7](03-speech-to-speech-status.md#7-deepfilternet--torchaudio-210-compat-patch)
 
-### SoX 缺失警告
+### SoX missing warning
 
 ```
 WARNING: SoX could not be found!
 ```
 
-- 不影响核心功能，可选安装：`sudo dnf install sox`
+- Not blocking; install with `sudo dnf install sox` if needed
 
-### MIOpen workspace 警告
+### MIOpen workspace warning
 
 ```
 MIOpen(HIP): Warning [IsEnoughWorkspace] Solver <GemmFwdRest>, workspace required: ...
 ```
 
-- **影响**：无功能影响，MIOpen 会自动调整 workspace
-- **原因**：ROCm MIOpen 的 GEMM solver workspace 估计偏差
-- **处理**：忽略即可
+- **Impact**: None — MIOpen auto-adjusts
+- **Cause**: MIOpen's GEMM solver workspace size estimate is off
+- **Action**: Ignore

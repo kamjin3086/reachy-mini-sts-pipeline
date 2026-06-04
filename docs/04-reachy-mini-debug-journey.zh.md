@@ -1,8 +1,8 @@
 # Reachy Mini Lite + speech-to-speech Pipeline: Connection OK, No Response — Need Help Debugging
 
-> [中文版](04-reachy-mini-debug-journey.zh.md) · [← Back to README](../README.md)
+> [English](04-reachy-mini-debug-journey.md) · [← 返回 README](../README.zh.md)
 >
-> This is the original help-request draft from 2026-06-03 (not actually posted to Reddit). The issue was resolved during the GPU-accelerated phase, but the original diagnostic process is preserved as a debugging reference.
+> 本文档是 2026-06-03 的求助草稿（实际未发到 Reddit）。在 GPU 加速阶段问题已解决，但原始诊断过程保留作为调试参考。
 
 ## Background
 
@@ -103,38 +103,38 @@ Any help or pointers would be greatly appreciated. Happy to share more logs or d
 
 ---
 
-## Epilogue: how it was actually resolved
+## 尾声：问题最终如何解决
 
-The "nothing happens" symptom persisted into the GPU-accelerated phase. After moving to the Strix Halo 128G workstation, switching to Paraformer-zh + Qwen3-TTS (instead of Parakeet + Kokoro), and modifying the official Reachy Mini conversation app, the same `ws://0.0.0.0:8765/v1/realtime` endpoint started working.
+"什么都不发生"这个症状在 GPU 加速阶段仍然存在。搬到 Strix Halo 128G 工作站后，换成 Paraformer-zh + Qwen3-TTS（代替 Parakeet + Kokoro），并修改了官方 Reachy Mini 对话 app，同样的 `ws://0.0.0.0:8765/v1/realtime` 端点才开始正常工作。
 
-The root cause was never a single bug — it was a combination of:
+根因不是单一 bug，而是多重问题叠加：
 
-1. **VAD never triggered** because the audio path on the macOS control side wasn't piping microphone data to the WebSocket (resolved by modifying the conversation app).
-2. **Kokoro TTS was CPU-only**, and combined with the broken VAD path, made the system feel completely unresponsive.
-3. **Qwen3-TTS does not work on AMD GPUs** out of the box — the original assumption that it "just works" is wrong on ROCm. It required the TheRock gfx1151 PyTorch wheel plus a fix to ROCm 7.13's gfx1151 issues (covered in [01 — ROCm gfx1151 PyTorch Install](01-rocm-gfx1151-pytorch-install.md)).
+1. **VAD 始终未触发**：macOS 控制端的音频路径没有把麦克风数据传到 WebSocket（通过修改对话 app 修复）
+2. **Kokoro TTS 是 CPU 推理**，加上 VAD 路径断裂，整个系统感觉完全无响应
+3. **Qwen3-TTS 在 AMD GPU 上不直接可用**——原本以为"开箱即用"是错的，ROCm 上需要 TheRock gfx1151 PyTorch wheel + ROCm 7.13 的 gfx1151 修复（见 [01 — ROCm gfx1151 PyTorch 安装](01-rocm-gfx1151-pytorch-install.md)）
 
-The forked and modified Reachy Mini conversation app — including the fix for the VAD/audio path — lives at **[kamjin3086/reachy_mini_conversation_app](https://github.com/kamjin3086/reachy_mini_conversation_app)**, and the debugging workflow that uncovered these issues is packaged as a reusable agent skill at **[kamjin3086/reachymini-debug-skill](https://github.com/kamjin3086/reachymini-debug-skill)**.
+Fork 并修改的 Reachy Mini 对话 app（含 VAD/音频路径修复）位于 **[kamjin3086/reachy_mini_conversation_app](https://github.com/kamjin3086/reachy_mini_conversation_app)**，定位这些问题的调试工作流打包成了可复用的 agent skill：**[kamjin3086/reachymini-debug-skill](https://github.com/kamjin3086/reachymini-debug-skill)**。
 
-## Iterating on the Forked App (Editable Install)
+## 迭代修改 fork 的 app（可编辑模式安装）
 
-When you're debugging the fork and need to make frequent small changes to the app source (VAD thresholds, prompt wording, error messages, etc.), use pip's `-e` (editable / development) install mode so your editor changes take effect immediately — no reinstall, no daemon restart needed for most code changes:
+调试 fork 阶段需要频繁改动 app 源码（VAD 阈值、prompt 文案、错误信息等）时，用 pip 的 `-e`（可编辑 / 开发模式）安装 —— 编辑器里保存就立即生效，**大多数代码改动不需要重装、也不需要重启 daemon**：
 
 ```bash
-# Clone your fork locally
+# 把 fork 克隆到本地
 git clone https://github.com/kamjin3086/reachy_mini_conversation_app.git
 cd reachy_mini_conversation_app
 
-# Install in editable mode (-e) into the SAME Python env the daemon uses
+# 用可编辑模式装到 daemon 用的同一个 Python 环境
 pip install -e .
 
-# Now any edit you save in this directory is picked up live
-# by the running Reachy Mini Control app on next call/invocation
+# 现在你在这个目录下任何保存的修改，
+# 都会在下次调用时被正在运行的 Reachy Mini Control app 实时加载
 ```
 
-Why this matters during debug:
+为什么调试时这个细节很关键：
 
-- **No reinstall loop** — saves minutes per change. Reachy Mini Control installs apps from its own store path; regular `pip install` of the same package will shadow that path on next import.
-- **Same Python env** — make sure `pip` here points to the same interpreter the daemon launches (check with `which python3` and compare to Reachy Mini Control's "App Python path" in settings).
-- **Process restart may still be needed** for changes to top-level imports, daemon hooks, or anything loaded at startup. Plan for ~one restart per "session" of edits.
+- **省掉重装循环** —— 每次改动省几分钟。Reachy Mini Control 从自己的 store 路径装 app；普通 `pip install` 同名包会在下次 import 时覆盖那条路径。
+- **必须同一个 Python 环境** —— 确认 `pip` 指向 daemon 启动用的解释器（用 `which python3` 比对 Reachy Mini Control 设置里的 "App Python path"）。
+- **某些改动仍需重启进程** —— 顶层 import、daemon 钩子、启动期加载的内容改完还是得重启一次。规划好"一波改动"再来一次重启。
 
-If you don't use `-e` you'll find yourself re-installing after every save, which is the slowest way to debug.
+不用 `-e` 的话你会发现自己每保存一次就重装一次 —— 这是调试最慢的方式。
