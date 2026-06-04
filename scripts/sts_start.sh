@@ -14,6 +14,30 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 
 unset HF_ENDPOINT
 
+# ── 端口检查与清理 ──
+check_and_free_port() {
+    local port=$1
+    local pid
+    pid=$(lsof -ti :$port 2>/dev/null)
+    if [ -n "$pid" ]; then
+        echo "[port-check] Port $port is in use (PID: $pid), killing..."
+        kill -9 $pid 2>/dev/null
+        sleep 1
+        # 二次确认
+        pid=$(lsof -ti :$port 2>/dev/null)
+        if [ -n "$pid" ]; then
+            echo "[port-check] Port $port still occupied (PID: $pid), force killing..."
+            kill -9 $pid 2>/dev/null
+            sleep 1
+        fi
+        echo "[port-check] Port $port is now free."
+    else
+        echo "[port-check] Port $port is free."
+    fi
+}
+
+check_and_free_port 8765
+
 # 各组件的 warmup（STT 模型加载、LLM 首请求、TTS CUDA graph 编译）
 # 由 speech-to-speech CLI 内部自动完成，无需外部预热
 speech-to-speech \
