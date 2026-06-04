@@ -1,0 +1,40 @@
+Creative Commons Attribution 4.0 International (CC-BY-4.0)
+
+Copyright (c) 2026 kamjin3086
+
+This work (documentation, scripts, and configuration in this repository)
+is licensed under the Creative Commons Attribution 4.0 International
+License.
+
+You are free to:
+  - Share — copy and redistribute the material in any medium or format
+  - Adapt — remix, transform, and build upon the material for any purpose,
+    even commercially
+
+Under the following terms:
+  - Attribution — You must give appropriate credit, provide a link to the
+    license, and indicate if changes were made. You may do so in any
+    reasonable manner, but not in any way that suggests the licensor
+    endorses you or your use.
+
+Full license text: https://creativecommons.org/licenses/by/4.0/legalcode
+Human-readable summary: https://creativecommons.org/licenses/by/4.0/
+
+================================================================================
+THIRD-PARTY COMPONENTS
+================================================================================
+
+This repository documents a deployment of third-party software. Those
+components retain their own licenses:
+
+  - facebookresearch/speech-to-speech — See its LICENSE
+  - FunASR / Paraformer — Apache-2.0 / MIT
+  - Qwen3-TTS — See its LICENSE
+  - llama-swap — MIT
+  - AMD TheRock — MIT
+  - speech-to-speech and its dependencies — See respective LICENSE files
+
+This CC-BY-4.0 license applies ONLY to the original documentation
+content and scripts authored for this repository. It does NOT apply
+to or affect the licensing of any third-party software mentioned or
+referenced.

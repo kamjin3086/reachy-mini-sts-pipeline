@@ -1,0 +1,90 @@
+# =====================================================================
+# Python
+# =====================================================================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# =====================================================================
+# Virtual environments (handled outside this repo)
+# =====================================================================
+.venv/
+venv/
+env/
+ENV/
+
+# =====================================================================
+# IDE / editor
+# =====================================================================
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+*~
+.DS_Store
+Thumbs.db
+
+# Vim swap files
+.*.swp
+.*.swo
+
+# =====================================================================
+# OS / logs
+# =====================================================================
+*.log
+logs/
+core.*
+*.core
+.stackdump
+
+# =====================================================================
+# ML / DL / model cache (NEVER commit — too large)
+# =====================================================================
+# Hugging Face
+~/.cache/huggingface/
+.huggingface/
+
+# ModelScope (FunASR / Paraformer)
+~/.cache/modelscope/
+.modelscope/
+
+# DeepFilterNet
+~/.cache/DeepFilterNet/
+
+# Torch
+~/.cache/torch/
+
+# nltk_data (downloaded at runtime)
+~/nltk_data/
+
+# Benchmark outputs
+/tmp/sts_bench/
+/tmp/flashattn_dl/
+/tmp/venv_freeze_*.txt
+
+# =====================================================================
+# Backup / temp files from this project
+# =====================================================================
+sts_start.sh.bak
+*.bak
+.*.tmp
+.*.un~
