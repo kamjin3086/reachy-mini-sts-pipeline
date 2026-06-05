@@ -14,6 +14,10 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 
 unset HF_ENDPOINT
 
+# Keep assistant speech short and clean for TTS. Reachy actions must be emitted
+# as realtime tool calls by the client/session, not spoken as text.
+INIT_CHAT_PROMPT=${INIT_CHAT_PROMPT:-"你是 Reachy Mini 的中文语音助手。默认用中文口语化回答，每次只说 1 到 2 句，不使用 markdown。不要朗读动作标记、JSON、代码、工具名或工具参数。如果用户要求点头、动作、表情或跳舞，必须根据当前可用工具 schema 调用工具执行；自然语言回复只说给用户听的短句，不要描述工具调用过程。"}
+
 # ── 端口检查与清理 ──
 check_and_free_port() {
     local port=$1
@@ -47,9 +51,19 @@ speech-to-speech \
     --model_name Gemma-4-E4B-instruct \
     --llm_backend responses-api \
     --responses_api_stream \
+    --responses_api_disable_thinking \
+    --stream_batch_sentences 1 \
+    --init_chat_prompt "$INIT_CHAT_PROMPT" \
     --tts qwen3 \
+    --qwen3_tts_language chinese \
+    --qwen3_tts_speaker Serena \
+    --qwen3_tts_instruct "用自然、亲切、清晰的中文口语语气说话。" \
+    --qwen3_tts_streaming_chunk_size 12 \
+    --qwen3_tts_blocksize 512 \
+    --qwen3_tts_non_streaming_mode \
     --ws_host 0.0.0.0 \
     --ws_port 8765 \
     --stt paraformer \
-    --language auto \
-    --enable_live_transcription
+    --language zh \
+    --live_transcription_update_interval 0.5 \
+    --no_enable_live_transcription
