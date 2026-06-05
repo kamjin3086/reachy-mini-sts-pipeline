@@ -30,6 +30,7 @@
 | E2E perceived latency 4 s+ | LLM is on NPU model or Step-3.5-Flash | Switch back to `Gemma-4-E4B-instruct` (steady-state TTFT 50 ms) |
 | First TTS call 12 s+ | CUDA graph compile | Unavoidable; CLI does warmup internally at startup |
 | STT reports MPS error | Library bug: `paraformer_handler.py:56` | See [MPS bug patch](#mps-bug) below |
+| Chinese input triggers repeated answers (`今`, `今天`, `今天天...`) | Paraformer progressive chunks are emitted as final `Transcription` | Keep `--no_enable_live_transcription`, or run [Paraformer live transcription patch](#paraformer-live-transcription-duplicates) before enabling live subtitles |
 | LLM 401 invalid_api_key | `OPENAI_API_KEY` client env interference | `unset OPENAI_API_KEY` and restart |
 
 ## Package install failures
@@ -41,6 +42,16 @@
 | `flash-attn` cannot install | gfx1151 has no upstream support | **Don't install**, see [03 §2.a](docs/03-speech-to-speech-status.md) |
 
 ## Fix patches
+
+### Paraformer live transcription duplicates
+
+Production defaults to `--no_enable_live_transcription`. If you want live subtitles, patch the installed Paraformer handler so progressive chunks become `PartialTranscription` and only final chunks become `Transcription`:
+
+```bash
+python3 scripts/patch_paraformer_live_transcription.py
+```
+
+After patching, enable subtitles with `--enable_live_transcription --live_transcription_update_interval 0.5`.
 
 ### MPS bug
 

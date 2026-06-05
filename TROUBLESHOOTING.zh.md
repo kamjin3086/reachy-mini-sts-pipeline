@@ -30,6 +30,7 @@
 | E2E 感知延迟 4s+ | LLM 选了 NPU 模型或 Step-3.5-Flash | 改回 `Gemma-4-E4B-instruct`（稳态 TTFT 50ms） |
 | TTS 首次 12s+ | CUDA graph 编译 | 不可消除；CLI 启动时内部自动预热 |
 | STT 报 MPS 错误 | 库内 bug：`paraformer_handler.py:56` | 见下面 [MPS bug patch](#mps-bug) |
+| 中文输入触发重复回答（`今`、`今天`、`今天天...`） | Paraformer progressive chunk 被当成最终 `Transcription` 发出 | 保持 `--no_enable_live_transcription`，或启用字幕前先跑 [Paraformer live transcription patch](#paraformer-live-transcription-重复输入) |
 | LLM 401 invalid_api_key | `OPENAI_API_KEY` 客户端环境干扰 | `unset OPENAI_API_KEY` 后重启 |
 
 ## 包安装失败
@@ -41,6 +42,16 @@
 | `flash-attn` 装不上 | gfx1151 上游无支持 | **不装**，见 [docs/03 §2.a](docs/03-speech-to-speech-status.md) |
 
 ## 修复 patch
+
+### Paraformer live transcription 重复输入
+
+生产默认使用 `--no_enable_live_transcription`。如果需要实时字幕，先 patch 已安装的 Paraformer handler，让 progressive chunk 发 `PartialTranscription`，只有 final chunk 发 `Transcription`：
+
+```bash
+python3 scripts/patch_paraformer_live_transcription.py
+```
+
+patch 后再用 `--enable_live_transcription --live_transcription_update_interval 0.5` 开启字幕。
 
 ### MPS bug
 
