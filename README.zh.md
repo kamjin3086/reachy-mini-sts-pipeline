@@ -200,7 +200,7 @@ python3 scripts/bench_llm_models.py
 
 ## 致谢
 
-- [facebookresearch/speech-to-speech](https://github.com/facebookresearch/speech-to-speech) — 核心 STS 管道
+- [huggingface/speech-to-speech](https://github.com/huggingface/speech-to-speech) — 核心 STS 管道
 - [FunASR/Paraformer](https://github.com/modelscope/FunASR) — 中文 ASR
 - [Qwen3-TTS](https://huggingface.co/Qwen) — TTS
 - [llama-swap](https://github.com/mostlygeek/llama-swap) —— OpenAI 兼容的 LLM 代理 / 模型切换
