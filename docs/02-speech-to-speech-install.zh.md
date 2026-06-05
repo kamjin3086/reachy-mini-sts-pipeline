@@ -120,6 +120,8 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
 
 unset HF_ENDPOINT
 
+INIT_CHAT_PROMPT=${INIT_CHAT_PROMPT:-"你是 Reachy Mini 的中文语音助手。默认用中文口语化回答，每次只说 1 到 2 句，不使用 markdown。不要朗读动作标记、JSON、代码或工具调用内容；如果用户要求动作、表情或跳舞，回复一句自然短句，同时必须通过可用工具调用执行动作。"}
+
 speech-to-speech \
     --responses_api_base_url "http://127.0.0.1:8101/v1" \
     --responses_api_api_key "" \
@@ -127,12 +129,22 @@ speech-to-speech \
     --model_name Gemma-4-E4B-instruct \
     --llm_backend responses-api \
     --responses_api_stream \
+    --responses_api_disable_thinking \
+    --stream_batch_sentences 1 \
+    --init_chat_prompt "$INIT_CHAT_PROMPT" \
     --tts qwen3 \
+    --qwen3_tts_language chinese \
+    --qwen3_tts_speaker Serena \
+    --qwen3_tts_instruct "用自然、亲切、清晰的中文口语语气说话。" \
+    --qwen3_tts_streaming_chunk_size 12 \
+    --qwen3_tts_blocksize 512 \
+    --qwen3_tts_non_streaming_mode \
     --ws_host 0.0.0.0 \
     --ws_port 8765 \
     --stt paraformer \
-    --language auto \
-    --enable_live_transcription
+    --language zh \
+    --live_transcription_update_interval 0.5 \
+    --no_enable_live_transcription
 ```
 
 脚本位置：`/home/kamjin/sts_start.sh`
@@ -147,8 +159,11 @@ speech-to-speech \
 | `--mode` | `realtime` | 实时语音交互模式 |
 | `--ws_host` | `0.0.0.0` | WebSocket 监听地址 |
 | `--ws_port` | `8765` | WebSocket 端口 |
-| `--language` | `auto` | 自动语言检测 |
-| `--enable_live_transcription` | | 启用实时字幕 |
+| `--language` | `zh` | 固定中文对话模式 |
+| `--no_enable_live_transcription` | | Paraformer partial/final patch 前禁用实时字幕 |
+| `--qwen3_tts_language` | `chinese` | 固定中文 TTS（Qwen3-TTS 后端不接受 `zh`） |
+
+如果需要实时字幕，先运行 `python3 scripts/patch_paraformer_live_transcription.py`，再使用 `--enable_live_transcription --live_transcription_update_interval 0.5`。
 
 ## 验证
 
