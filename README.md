@@ -200,7 +200,7 @@ Full list: [docs/03 §Known Issues](docs/03-speech-to-speech-status.md), [TROUBL
 
 ## Acknowledgments
 
-- [facebookresearch/speech-to-speech](https://github.com/facebookresearch/speech-to-speech) — Core STS pipeline
+- [huggingface/speech-to-speech](https://github.com/huggingface/speech-to-speech) — Core STS pipeline
 - [FunASR/Paraformer](https://github.com/modelscope/FunASR) — Chinese ASR
 - [Qwen3-TTS](https://huggingface.co/Qwen) — TTS
 - [llama-swap](https://github.com/mostlygeek/llama-swap) — OpenAI-compatible LLM proxy / model switcher
