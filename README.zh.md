@@ -133,6 +133,13 @@ $EDITOR scripts/sts_start.sh   # 把 --model_name 改成你 LLM server 提供的
 # → WebSocket: ws://0.0.0.0:8765/v1/realtime
 ```
 
+生产默认关闭 Paraformer live transcription，避免中文 partial 字幕被当成多轮用户输入重复送进 LLM。若要启用实时字幕，先 patch 已安装的 handler：
+
+```bash
+python3 scripts/patch_paraformer_live_transcription.py
+# 然后把 sts_start.sh 中的 --no_enable_live_transcription 改为 --enable_live_transcription
+```
+
 `sts_start.sh` 设了这些 ROCm 环境变量（**不要**设 `HSA_OVERRIDE_GFX_VERSION`，见 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)）：
 
 ```bash
@@ -151,6 +158,7 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1    # AOTriton 性能
 | [docs/02-speech-to-speech-install.md](docs/02-speech-to-speech-install.md) | speech-to-speech 管道安装 + 选型对比（STT/TTS/LLM） | 看完 01 后 |
 | [docs/03-speech-to-speech-status.md](docs/03-speech-to-speech-status.md) | 当前运行状态 + 性能基线 + 调优方向 + 已知问题 | 部署完成后、想调优时 |
 | [docs/04-reachy-mini-debug-journey.md](docs/04-reachy-mini-debug-journey.md) | Reachy Mini 调试之旅（最初的"什么都不发生"问题记录）| 遇到 Reachy Mini 连接问题时 |
+| [docs/05-qwen3tts-realtime-test-report.zh.md](docs/05-qwen3tts-realtime-test-report.zh.md) | 中文 Qwen3-TTS、括号语气指令、Realtime 工具调用实测 | 调中文对话效果时 |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 关键 bug 速查表 | 故障时 |
 | [README.md](README.md) | 英文版 | English readers |
 

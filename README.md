@@ -133,6 +133,13 @@ $EDITOR scripts/sts_start.sh   # Adjust --model_name to a model your LLM server 
 # → WebSocket: ws://0.0.0.0:8765/v1/realtime
 ```
 
+Production starts with Paraformer live transcription disabled so partial Chinese subtitles are not sent to the LLM as repeated user turns. To enable live subtitles, first patch the installed handler:
+
+```bash
+python3 scripts/patch_paraformer_live_transcription.py
+# then switch sts_start.sh from --no_enable_live_transcription to --enable_live_transcription
+```
+
 `sts_start.sh` sets these ROCm env vars (do **not** set `HSA_OVERRIDE_GFX_VERSION` — see [TROUBLESHOOTING.md](TROUBLESHOOTING.md)):
 
 ```bash
@@ -151,6 +158,7 @@ Steady-state perceived latency: **~1.0 s** (user stops speaking → first synthe
 | [docs/02 — STS Pipeline Install](docs/02-speech-to-speech-install.md) | speech-to-speech installation + STT/TTS/LLM selection rationale | After doc 01 |
 | [docs/03 — Runtime Status & Tuning](docs/03-speech-to-speech-status.md) | Current state, performance baselines, tuning, known issues | After deployment, when optimizing |
 | [docs/04 — Reachy Mini Debug Journey](docs/04-reachy-mini-debug-journey.md) | The original "nothing happens" debugging record | When Reachy Mini connection fails |
+| [docs/05 — Qwen3-TTS Realtime Test Report](docs/05-qwen3tts-realtime-test-report.zh.md) | Real Chinese TTS, inline instruction, and Realtime tool-call results | When tuning Chinese conversation |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Quick symptom → fix lookup | When something breaks |
 | [README.zh.md](README.zh.md) | This document in Chinese | 中文读者 |
 
