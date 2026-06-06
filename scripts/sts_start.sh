@@ -11,8 +11,70 @@ export GPU_MAX_ALLOC_PERCENT=100
 export GPU_MAX_HEAP_SIZE=100
 # 启用 AOTriton 实验性编译（ROCm 7.11+ PyTorch 性能优化）
 export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1
+# 抑制 ROCm/MIOpen workspace 估算警告；该警告会刷屏，但不是 TTS 卡顿主因
+export MIOPEN_LOG_LEVEL=3
+# 当前 ROCm/gfx1151 上 Qwen3-TTS decode 偶发低于实时播放速度。
+# 需要完全避免句中停顿时可手动设为 1；默认关闭以免首句等待过长。
+export STS_QWEN3_TTS_BUFFER_FULL_UTTERANCE=${STS_QWEN3_TTS_BUFFER_FULL_UTTERANCE:-0}
+# 降低随机采样导致的 EOS 长尾波动；由本仓库 startup patch 转发给 faster-qwen3-tts。
+export STS_QWEN3_TTS_DO_SAMPLE=${STS_QWEN3_TTS_DO_SAMPLE:-0}
 
+# ROCm 7.13/TheRock 已原生支持 gfx1151；override 会导致 kernel 架构不匹配或慢路径。
+unset HSA_OVERRIDE_GFX_VERSION
 unset HF_ENDPOINT
+export NLTK_DATA=${NLTK_DATA:-/home/kamjin/nltk_data}
+
+DEFAULT_QWEN3_TTS_MODEL="Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice"
+LOCAL_QWEN3_TTS_MODEL="/home/kamjin/.cache/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-1.7B-CustomVoice/snapshots/0c0e3051f131929182e2c023b9537f8b1c68adfe"
+if [ -z "${QWEN3_TTS_MODEL_NAME:-}" ] && [ -d "$LOCAL_QWEN3_TTS_MODEL" ]; then
+    QWEN3_TTS_MODEL_NAME="$LOCAL_QWEN3_TTS_MODEL"
+else
+    QWEN3_TTS_MODEL_NAME="${QWEN3_TTS_MODEL_NAME:-$DEFAULT_QWEN3_TTS_MODEL}"
+fi
+
+DEFAULT_PARAFORMER_STT_MODEL="paraformer-zh"
+LOCAL_PARAFORMER_STT_MODEL="/home/kamjin/.cache/modelscope/hub/models/iic/speech_seaco_paraformer_large_asr_nat-zh-cn-16k-common-vocab8404-pytorch"
+if [ -z "${PARAFORMER_STT_MODEL_NAME:-}" ] && [ -d "$LOCAL_PARAFORMER_STT_MODEL" ]; then
+    PARAFORMER_STT_MODEL_NAME="$LOCAL_PARAFORMER_STT_MODEL"
+else
+    PARAFORMER_STT_MODEL_NAME="${PARAFORMER_STT_MODEL_NAME:-$DEFAULT_PARAFORMER_STT_MODEL}"
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd)"
+if [ ! -f "$REPO_DIR/scripts/patch_qwen3_tts_inline_instruct.py" ]; then
+    REPO_DIR="/home/kamjin/projects/reachy-mini-sts-pipeline"
+fi
+
+resolve_sts_python() {
+    local sts_bin shebang
+    sts_bin=$(command -v speech-to-speech 2>/dev/null || true)
+    if [ -n "$sts_bin" ] && [ -r "$sts_bin" ]; then
+        shebang=$(head -n 1 "$sts_bin" 2>/dev/null || true)
+        if [[ "$shebang" == "#!"*python* ]]; then
+            echo "${shebang#\#!}"
+            return 0
+        fi
+    fi
+    command -v python3 2>/dev/null || command -v python 2>/dev/null
+}
+
+apply_startup_patches() {
+    local patch_python
+    patch_python=$(resolve_sts_python)
+    if [ -z "$patch_python" ]; then
+        echo "[patch] Could not find python for startup patches." >&2
+        return 1
+    fi
+
+    echo "[patch] Checking installed speech-to-speech patches with $patch_python"
+    "$patch_python" "$REPO_DIR/scripts/patch_sts_offline_startup.py" || return 1
+    "$patch_python" "$REPO_DIR/scripts/patch_paraformer_live_transcription.py" || return 1
+    "$patch_python" "$REPO_DIR/scripts/patch_qwen3_tts_inline_instruct.py" || return 1
+    "$patch_python" "$REPO_DIR/scripts/patch_qwen3_tts_realtime_stability.py" || return 1
+}
+
+apply_startup_patches || exit 1
 
 # Keep assistant speech short and clean for TTS. Reachy actions must be emitted
 # as realtime tool calls by the client/session, not spoken as text.
@@ -52,18 +114,22 @@ speech-to-speech \
     --llm_backend responses-api \
     --responses_api_stream \
     --responses_api_disable_thinking \
-    --stream_batch_sentences 1 \
+    --stream_batch_sentences 3 \
     --init_chat_prompt "$INIT_CHAT_PROMPT" \
     --tts qwen3 \
+    --qwen3_tts_model_name "$QWEN3_TTS_MODEL_NAME" \
+    --qwen3_tts_attn_implementation sdpa \
     --qwen3_tts_language chinese \
     --qwen3_tts_speaker Serena \
     --qwen3_tts_instruct "用自然、亲切、清晰的中文口语语气说话。" \
+    --qwen3_tts_non_streaming_mode true \
     --qwen3_tts_streaming_chunk_size 12 \
+    --qwen3_tts_max_new_tokens 128 \
     --qwen3_tts_blocksize 512 \
-    --qwen3_tts_non_streaming_mode \
     --ws_host 0.0.0.0 \
     --ws_port 8765 \
     --stt paraformer \
+    --paraformer_stt_model_name "$PARAFORMER_STT_MODEL_NAME" \
     --language zh \
     --live_transcription_update_interval 0.5 \
     --no_enable_live_transcription

@@ -126,7 +126,12 @@ def patch_text(source: str) -> tuple[str, bool]:
             raise RuntimeError("Could not find Qwen3 voice-clone method anchor.")
         patched = patched.replace(anchor, HELPER_BLOCK + anchor, 1)
 
-    if PROCESS_NEW not in patched:
+    inline_instruct_already_present = (
+        "text, inline_instruct = self._extract_inline_instruct(text)" in patched
+        and "original_instruct = self.instruct" in patched
+        and "self.instruct = original_instruct" in patched
+    )
+    if PROCESS_NEW not in patched and not inline_instruct_already_present:
         if PROCESS_OLD not in patched:
             raise RuntimeError("Could not find Qwen3 process block to patch.")
         patched = patched.replace(PROCESS_OLD, PROCESS_NEW, 1)

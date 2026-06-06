@@ -28,6 +28,17 @@ PATCHED_YIELD = """\
 OLD_YIELD = "        yield Transcription(text=pred_text)\n"
 OLD_IMPORT = "from speech_to_speech.pipeline.messages import Transcription\n"
 NEW_IMPORT = "from speech_to_speech.pipeline.messages import PartialTranscription, Transcription\n"
+OLD_PATH_STRIP = """\
+        if len(model_name.split("/")) > 1:
+            model_name = model_name.split("/")[-1]
+"""
+PATCHED_PATH_STRIP = """\
+        # Preserve absolute/local cache paths so startup can run offline.
+        if not model_name.startswith("/") and len(model_name.split("/")) > 1:
+            model_name = model_name.split("/")[-1]
+"""
+OLD_AUTOMODEL = "        self.model = AutoModel(model=model_name, device=device)\n"
+PATCHED_AUTOMODEL = "        self.model = AutoModel(model=model_name, device=device, disable_update=True)\n"
 
 
 def find_installed_handler() -> Path:
@@ -41,19 +52,32 @@ def find_installed_handler() -> Path:
 
 
 def patch_text(source: str) -> tuple[str, bool]:
-    if PATCHED_YIELD in source and NEW_IMPORT in source:
+    if (
+        PATCHED_YIELD in source
+        and NEW_IMPORT in source
+        and PATCHED_PATH_STRIP in source
+        and PATCHED_AUTOMODEL in source
+    ):
         return source, False
 
     if OLD_IMPORT not in source and NEW_IMPORT not in source:
         raise RuntimeError("Could not find Paraformer messages import to patch.")
     if OLD_YIELD not in source and PATCHED_YIELD not in source:
         raise RuntimeError("Could not find final Transcription yield to patch.")
+    if OLD_PATH_STRIP not in source and PATCHED_PATH_STRIP not in source:
+        raise RuntimeError("Could not find Paraformer model path handling to patch.")
+    if OLD_AUTOMODEL not in source and PATCHED_AUTOMODEL not in source:
+        raise RuntimeError("Could not find Paraformer AutoModel construction to patch.")
 
     patched = source
     if NEW_IMPORT not in patched:
         patched = patched.replace(OLD_IMPORT, NEW_IMPORT, 1)
     if PATCHED_YIELD not in patched:
         patched = patched.replace(OLD_YIELD, PATCHED_YIELD, 1)
+    if PATCHED_PATH_STRIP not in patched:
+        patched = patched.replace(OLD_PATH_STRIP, PATCHED_PATH_STRIP, 1)
+    if PATCHED_AUTOMODEL not in patched:
+        patched = patched.replace(OLD_AUTOMODEL, PATCHED_AUTOMODEL, 1)
     return patched, patched != source
 
 

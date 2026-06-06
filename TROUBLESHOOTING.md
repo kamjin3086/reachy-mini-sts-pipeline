@@ -39,7 +39,7 @@
 |---|---|---|
 | `uv pip install` reports "no wheel for your platform" | Package supports x86 CUDA only, no ROCm equivalent | Find TheRock alternative (torch) or community ROCm wheel |
 | `numpy` cannot install 2.x | deepfilternet pins `numpy<2` | Accept 1.26.4 (torch-compatible); see [03 §Package notes](docs/03-speech-to-speech-status.md) for how to force 2.x if needed |
-| `flash-attn` cannot install | gfx1151 has no upstream support | **Don't install**, see [03 §2.a](docs/03-speech-to-speech-status.md) |
+| `flash-attn` cannot install | Base venv should not depend on flash-attn | Keep it out of the base venv; optional path is in [docs/06](docs/06-runtime-paths-and-offline.zh.md) |
 
 ## Fix patches
 

@@ -37,7 +37,7 @@
 | 当前 LLM 模型 | `Gemma-4-E4B-instruct` |
 | numpy | 1.26.4（被 deepfilternet 强制降级，torch 仍正常） |
 | DeepFilterNet | 0.5.6（已 patch torchaudio 兼容） |
-| flash-attn | 未安装（gfx1151 上游不支持） |
+| flash-attn | 基础 venv 未安装；已验证的可选 Qwen3-TTS FastAPI 路径见 [docs/06](06-runtime-paths-and-offline.zh.md) |
 
 ### 启动脚本
 
@@ -213,7 +213,9 @@ lemonade（以及 vLLM 等其他推理后端）支持相同 system prompt 复用
 
 ### 2. TTS 加速
 
-**a) 启用 flash-attention — ❌ 不建议 gfx1151 安装**
+**a) 启用 flash-attention — 基础 venv 跳过；可选隔离路径已验证**
+
+2026-06-06 更新：基础 venv 仍然不直接安装 flash-attn，但已经验证了使用 flash-attn AMD Triton backend 的 Qwen3-TTS FastAPI 路径。见 [docs/06](06-runtime-paths-and-offline.zh.md)。下面旧记录保留，用来说明为什么它不应该作为基础依赖。
 
 经过 [ROCm/TheRock#1364](https://github.com/ROCm/TheRock/issues/1364) 和 [TesslateAI/FlashAttentionDist](https://github.com/TesslateAI/FlashAttentionDist) 的调研：
 
@@ -235,7 +237,7 @@ print(importlib.util.find_spec('pyaotriton'))  # None (Python 运行时未打包
 
 `pyaotriton` Python 包在 wheel 中**不存在**（只有 C++ ops 注册），所以 `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` 启用了 ops 但无 backend。SDPA 默认走 math path，**0.20ms @ [2,8,64,64] fp16** 已经很够用。
 
-**结论**：跳过 flash-attn 安装。强行编译 30+ min 大概率失败，或编译出无 gfx1151 HIP kernel 的废包。
+**基础路径结论**：主 venv 继续跳过 flash-attn。需要优化 Qwen3-TTS 运行吞吐时，使用 [docs/06](06-runtime-paths-and-offline.zh.md) 里的固定版本路径。
 
 **b) 切换到更轻量的 TTS**
 
@@ -559,7 +561,7 @@ python3 -c "from df.enhance import init_df; init_df()"
 - [ ] 向 lemonade 维护方提 issue（Gemma-4-E2B 启动失败）
 - [ ] 调优 lemonade / llama-swap 推理参数（temperature、repetition_penalty 等）
 - [ ] 评估升级到 vLLM / SGLang 替代 lemonade
-- [ ] ~~探索 ROCm Flash Attention 2/3（性能增益）~~ — **不可行**，gfx1151 无上游支持
+- [x] ROCm flash-attn 可选路径 — 基础 venv 跳过；Qwen3-TTS FastAPI 路径已验证，见 [docs/06](06-runtime-paths-and-offline.zh.md)
 - [ ] ~~评估 aotriton 内核~~ — **无 Python backend**，C++ ops 已注册但运行时缺失
 - [ ] 等待 speech-to-speech 上游修复 MPS bug，移除 monkey-patch
 - [ ] 升级到 Qwen3-TTS VoiceDesign / Base 模型支持自定义声音

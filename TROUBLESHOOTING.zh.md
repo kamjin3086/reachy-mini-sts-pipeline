@@ -39,7 +39,7 @@
 |---|---|---|
 | `uv pip install` 报 "no wheel for your platform" | 包只支持 x86 CUDA，ROCm 无对应 | 找 TheRock 替代（torch）或 TheRock community wheels |
 | `numpy` 装不上 2.x | deepfilternet 强制 pin `numpy<2` | 接受 1.26.4 即可（torch 兼容），需要 numpy 2 见 [docs/03 包依赖注记](docs/03-speech-to-speech-status.md) |
-| `flash-attn` 装不上 | gfx1151 上游无支持 | **不装**，见 [docs/03 §2.a](docs/03-speech-to-speech-status.md) |
+| `flash-attn` 装不上 | 基础 venv 不应依赖 flash-attn | 不装进基础 venv；可选路径见 [docs/06](docs/06-runtime-paths-and-offline.zh.md) |
 
 ## 修复 patch
 

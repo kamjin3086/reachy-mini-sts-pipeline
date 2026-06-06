@@ -51,6 +51,8 @@ Thumbs.db
 # OS / logs
 # =====================================================================
 *.log
+new_temp_logs.txt
+scripts/log_*.txt
 logs/
 core.*
 *.core

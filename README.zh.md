@@ -68,7 +68,7 @@
 | deepfilternet | 0.5.6 | 降噪 —— **+ 1 行 patch**（`df/io.py:9`，适配 TheRock torchaudio 2.10；每次重装后要重做）|
 | hf-transfer | 0.1.9 | HuggingFace 高速下载 —— **TTS 模型下载必需** |
 
-跳过：**flash-attn**（gfx1151 上游无 HIP kernel，完整理由见 [docs/03 §2.a](docs/03-speech-to-speech-status.md)）。
+基础安装跳过 **flash-attn**。高性能 Qwen3-TTS 路径见 [docs/06](docs/06-runtime-paths-and-offline.zh.md)。
 
 ### 第 1 步 —— ROCm + PyTorch（TheRock gfx1151）
 
@@ -133,6 +133,15 @@ $EDITOR scripts/sts_start.sh   # 把 --model_name 改成你 LLM server 提供的
 # → WebSocket: ws://0.0.0.0:8765/v1/realtime
 ```
 
+当前只保留两条启动路径：
+
+| 路径 | 命令 | 适合场景 |
+|---|---|---|
+| 稳定路径 | `./scripts/sts_start.sh` | 需要最简单、最容易排障的可用方案 |
+| 高性能 Qwen3-TTS | `./scripts/sts_start_qwen3_openai_fastapi_flash.sh` | 需要更好的 Qwen3-TTS 运行吞吐，能接受较慢预热 |
+
+离线启动和高性能环境说明见 [docs/06](docs/06-runtime-paths-and-offline.zh.md)。
+
 生产默认关闭 Paraformer live transcription，避免中文 partial 字幕被当成多轮用户输入重复送进 LLM。若要启用实时字幕，先 patch 已安装的 handler：
 
 ```bash
@@ -156,9 +165,10 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1    # AOTriton 性能
 |---|---|---|
 | [docs/01-rocm-gfx1151-pytorch-install.md](docs/01-rocm-gfx1151-pytorch-install.md) | ROCm 7.13 + TheRock gfx1151 wheels + PyTorch 安装 | **第一次**部署必读 |
 | [docs/02-speech-to-speech-install.md](docs/02-speech-to-speech-install.md) | speech-to-speech 管道安装 + 选型对比（STT/TTS/LLM） | 看完 01 后 |
-| [docs/03-speech-to-speech-status.md](docs/03-speech-to-speech-status.md) | 当前运行状态 + 性能基线 + 调优方向 + 已知问题 | 部署完成后、想调优时 |
+| [docs/03-speech-to-speech-status.md](docs/03-speech-to-speech-status.md) | 详细状态、调优记录和已知问题 | 排查内部问题时 |
 | [docs/04-reachy-mini-debug-journey.md](docs/04-reachy-mini-debug-journey.md) | Reachy Mini 调试之旅（最初的"什么都不发生"问题记录）| 遇到 Reachy Mini 连接问题时 |
 | [docs/05-qwen3tts-realtime-test-report.zh.md](docs/05-qwen3tts-realtime-test-report.zh.md) | 中文 Qwen3-TTS、括号语气指令、Realtime 工具调用实测 | 调中文对话效果时 |
+| [docs/06-runtime-paths-and-offline.zh.md](docs/06-runtime-paths-and-offline.zh.md) | 两条启动路径、离线缓存行为和 flash-attn 环境检查 | 启动或分享项目前 |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | 关键 bug 速查表 | 故障时 |
 | [README.md](README.md) | 英文版 | English readers |
 
@@ -189,7 +199,7 @@ python3 scripts/bench_llm_models.py
 - **MPS bug**：`speech_to_speech/paraformer_handler.py:56` 无条件调用 `torch.mps.empty_cache()` 在 ROCm/CUDA 上崩溃。已提供 `sed` 一行修复。
 - **HSA override 副作用**：`HSA_OVERRIDE_GFX_VERSION=11.0.0` 在 ROCm 7.13 (TheRock) 上反而触发 `hipErrorInvalidImage`——**直接移除即可**。
 - **DeepFilterNet + torchaudio 2.10**：`df/io.py` 的 `torchaudio.backend.common` 引用在 TheRock 2.10 中不存在。已提供 `try/except` fallback patch。
-- **flash-attn**：gfx1151 上游无 HIP kernel 优化，**不装**。详见 [docs/03 调优方向 §2.a](docs/03-speech-to-speech-status.md)。
+- **flash-attn**：不要装进基础 venv；已验证的可选路径见 [docs/06](docs/06-runtime-paths-and-offline.zh.md)。
 
 完整列表见 [docs/03 §已知问题](docs/03-speech-to-speech-status.md) 和 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)。
 

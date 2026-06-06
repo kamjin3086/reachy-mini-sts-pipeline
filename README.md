@@ -68,7 +68,7 @@ The pipeline is set up in **5 steps**, each with pinned versions to avoid the fa
 | deepfilternet | 0.5.6 | Audio denoising — **+ 1-line patch** to `df/io.py:9` for TheRock torchaudio 2.10 (one-time after every reinstall) |
 | hf-transfer | 0.1.9 | HuggingFace fast downloader — **mandatory** for the TTS model download |
 
-Skip: **flash-attn** (gfx1151 has no upstream HIP kernel — full reasoning in [docs/03 §2.a](docs/03-speech-to-speech-status.md)).
+Base install skips **flash-attn**. The optional high-performance Qwen3-TTS path is documented in [docs/06](docs/06-runtime-paths-and-offline.zh.md).
 
 ### Step 1 — ROCm + PyTorch (TheRock gfx1151)
 
@@ -133,6 +133,15 @@ $EDITOR scripts/sts_start.sh   # Adjust --model_name to a model your LLM server 
 # → WebSocket: ws://0.0.0.0:8765/v1/realtime
 ```
 
+There are only two supported launch paths:
+
+| Path | Command | Use when |
+|---|---|---|
+| Stable | `./scripts/sts_start.sh` | You want the simplest working setup |
+| Fast Qwen3-TTS | `./scripts/sts_start_qwen3_openai_fastapi_flash.sh` | You want better Qwen3-TTS runtime throughput and can accept slower warmup |
+
+Offline startup and the high-performance environment are covered in [docs/06](docs/06-runtime-paths-and-offline.zh.md).
+
 Production starts with Paraformer live transcription disabled so partial Chinese subtitles are not sent to the LLM as repeated user turns. To enable live subtitles, first patch the installed handler:
 
 ```bash
@@ -156,9 +165,10 @@ Steady-state perceived latency: **~1.0 s** (user stops speaking → first synthe
 |---|---|---|
 | [docs/01 — ROCm gfx1151 PyTorch Install](docs/01-rocm-gfx1151-pytorch-install.md) | ROCm 7.13 + TheRock gfx1151 wheels + PyTorch | **First-time** deployment |
 | [docs/02 — STS Pipeline Install](docs/02-speech-to-speech-install.md) | speech-to-speech installation + STT/TTS/LLM selection rationale | After doc 01 |
-| [docs/03 — Runtime Status & Tuning](docs/03-speech-to-speech-status.md) | Current state, performance baselines, tuning, known issues | After deployment, when optimizing |
+| [docs/03 — Runtime Status & Tuning](docs/03-speech-to-speech-status.md) | Detailed status, tuning notes, and known issues | When debugging internals |
 | [docs/04 — Reachy Mini Debug Journey](docs/04-reachy-mini-debug-journey.md) | The original "nothing happens" debugging record | When Reachy Mini connection fails |
 | [docs/05 — Qwen3-TTS Realtime Test Report](docs/05-qwen3tts-realtime-test-report.zh.md) | Real Chinese TTS, inline instruction, and Realtime tool-call results | When tuning Chinese conversation |
+| [docs/06 — Runtime Paths & Offline Startup](docs/06-runtime-paths-and-offline.zh.md) | The two supported launch paths, offline cache behavior, and flash-attn environment checks | Before running or sharing the setup |
 | [TROUBLESHOOTING.md](TROUBLESHOOTING.md) | Quick symptom → fix lookup | When something breaks |
 | [README.zh.md](README.zh.md) | This document in Chinese | 中文读者 |
 
@@ -189,7 +199,7 @@ After benchmarking 7 LLM models, **Gemma-4-E4B-instruct** is the steady-state TT
 - **MPS bug**: `speech_to_speech/paraformer_handler.py:56` calls `torch.mps.empty_cache()` unconditionally and crashes on ROCm/CUDA. One-line `sed` fix provided.
 - **HSA override side effect**: `HSA_OVERRIDE_GFX_VERSION=11.0.0` actually triggers `hipErrorInvalidImage` on ROCm 7.13 (TheRock). **Just remove it.**
 - **DeepFilterNet + torchaudio 2.10**: `df/io.py` references `torchaudio.backend.common` which TheRock 2.10 doesn't ship. `try/except` fallback patch provided.
-- **flash-attn on gfx1151**: No upstream HIP kernel support. **Don't install.** Details in [docs/03 §2.a](docs/03-speech-to-speech-status.md).
+- **flash-attn on gfx1151**: keep it out of the base venv. For the verified optional path, see [docs/06](docs/06-runtime-paths-and-offline.zh.md).
 
 Full list: [docs/03 §Known Issues](docs/03-speech-to-speech-status.md), [TROUBLESHOOTING.md](TROUBLESHOOTING.md).
 

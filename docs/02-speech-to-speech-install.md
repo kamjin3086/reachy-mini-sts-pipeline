@@ -87,7 +87,7 @@ Optional dependencies:
 |---|---|---|---|
 | sox | Audio format conversion (optional) | `sudo dnf install sox` | ⚠️ Not installed |
 | DeepFilterNet | Audio denoising | `pip install deepfilternet` | ✅ Installed (small patch needed) |
-| flash-attn | Attention acceleration | **Not recommended for gfx1151** | ❌ Skipped |
+| flash-attn | Attention acceleration | Keep out of the base venv | Optional Qwen3-TTS path in [docs/06](06-runtime-paths-and-offline.zh.md) |
 
 ## Environment variables
 
@@ -223,7 +223,7 @@ export HF_ENDPOINT=https://hf-mirror.com
 
 ### Qwen3-TTS inference is slow
 
-- **Do not install flash-attn** on gfx1151 (see [03 §2.a](03-speech-to-speech-status.md))
+- Keep flash-attn out of the base venv. For the verified optional Qwen3-TTS FastAPI path, see [docs/06](06-runtime-paths-and-offline.zh.md).
 - Currently using PyTorch SDPA default backend (math path); speed is acceptable
 - First TTS call takes 12–14 s (CUDA graph compilation); subsequent calls drop to single-digit seconds
 

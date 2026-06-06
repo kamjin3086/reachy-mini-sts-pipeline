@@ -37,7 +37,7 @@
 | Active LLM model | `Gemma-4-E4B-instruct` |
 | numpy | 1.26.4 (downgraded by deepfilternet, torch still works) |
 | DeepFilterNet | 0.5.6 (patched for torchaudio compat) |
-| flash-attn | Not installed (no upstream support for gfx1151) |
+| flash-attn | Not installed in the base venv; optional Qwen3-TTS FastAPI path verified in [docs/06](06-runtime-paths-and-offline.zh.md) |
 
 ### Start script
 
@@ -217,7 +217,9 @@ Already using `*instruct` variants — no action needed. **Do not** switch to `*
 
 ### 2. TTS acceleration
 
-**a) flash-attention — ❌ Not recommended for gfx1151**
+**a) flash-attention — base venv skipped; optional isolated path now verified**
+
+Update on 2026-06-06: the base venv still deliberately skips flash-attn, but a Qwen3-TTS FastAPI path using flash-attn's AMD Triton backend has been verified. See [docs/06](06-runtime-paths-and-offline.zh.md). The older notes below explain why it should not be a base dependency.
 
 Based on [ROCm/TheRock#1364](https://github.com/ROCm/TheRock/issues/1364) and [TesslateAI/FlashAttentionDist](https://github.com/TesslateAI/FlashAttentionDist):
 
@@ -239,7 +241,7 @@ print(importlib.util.find_spec('pyaotriton'))  # None (Python runtime not packag
 
 The `pyaotriton` Python package is **absent** from the wheel (only C++ ops registered), so `TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1` enables the ops but provides no backend. SDPA falls back to the math path, which is **0.20 ms @ [2,8,64,64] fp16** — already fast enough.
 
-**Conclusion**: skip flash-attn. Compiling 30+ min will likely fail, or produce a useless package without gfx1151 HIP kernels.
+**Base-path conclusion**: skip flash-attn in the main venv. Use the pinned path in [docs/06](06-runtime-paths-and-offline.zh.md) when optimizing Qwen3-TTS runtime throughput.
 
 **b) Switch to a lighter TTS**
 
@@ -564,7 +566,7 @@ If deepfilternet breaks but you must use numpy 2.x with torch, pick one.
 - [ ] File issue on lemonade maintainer (Gemma-4-E2B startup failure)
 - [ ] Tune lemonade / llama-swap inference parameters (temperature, repetition_penalty, etc.)
 - [ ] Evaluate vLLM / SGLang as lemonade replacement
-- [ ] ~~ROCm Flash Attention 2/3~~ — **Not viable**: no upstream gfx1151 support
+- [x] ROCm flash-attn optional path — base venv skipped; Qwen3-TTS FastAPI path verified in [docs/06](06-runtime-paths-and-offline.zh.md)
 - [ ] ~~AOTriton kernels~~ — **No Python backend**: C++ ops registered but Python runtime missing
 - [ ] Wait for speech-to-speech upstream to fix MPS bug, remove monkey-patch
 - [ ] Upgrade to Qwen3-TTS VoiceDesign / Base models for custom voices

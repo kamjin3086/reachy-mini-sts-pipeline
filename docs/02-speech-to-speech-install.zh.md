@@ -87,7 +87,7 @@ uv pip install "speech-to-speech[paraformer]" funasr
 |---|---|---|---|
 | sox | 音频格式转换（可选） | `sudo dnf install sox` | ⚠️ 未装 |
 | DeepFilterNet | 音频降噪增强 | `pip install deepfilternet` | ✅ 已装（需小 patch） |
-| flash-attn | 注意力加速 | **不推荐 gfx1151** | ❌ 跳过 |
+| flash-attn | 注意力加速 | 不装进基础 venv | 可选 Qwen3-TTS 路径见 [docs/06](06-runtime-paths-and-offline.zh.md) |
 
 ## 环境变量
 
@@ -223,7 +223,7 @@ export HF_ENDPOINT=https://hf-mirror.com
 
 ### Qwen3-TTS 推理慢
 
-- flash-attn **不建议**安装（详见 [性能调优 - flash-attn](./speech-to-speech-status.md#4-启用-flash-attention)）
+- flash-attn 不装进基础 venv；已验证的可选 Qwen3-TTS FastAPI 路径见 [docs/06](06-runtime-paths-and-offline.zh.md)。
 - 当前使用 PyTorch SDPA 默认 backend（math 路径），速度可接受
 - TTS 首次 12-14s 含 CUDA graph 编译，后续降至个位数
 

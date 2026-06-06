@@ -1,87 +1,44 @@
 #!/usr/bin/env bash
+# Install the verified TheRock ROCm PyTorch stack for gfx1151.
+
 set -euo pipefail
 
-# ============================================================
-# ROCm PyTorch 安装脚本 - Strix Halo (gfx1151) / Fedora 44
-# 用法: chmod +x install_rocm_pytorch.sh && ./install_rocm_pytorch.sh
-# ============================================================
-VENV_DIR="/home/kamjin/apps/.venv"
+VENV_DIR=${VENV_DIR:-/home/kamjin/apps/.venv}
+THEROCK_INDEX_URL=${THEROCK_INDEX_URL:-https://rocm.nightlies.amd.com/v2/gfx1151/}
 
-echo "========================================"
-echo " Step 0: 激活虚拟环境"
-echo "========================================"
-if [ ! -d "$VENV_DIR" ]; then
-    echo "❌ 虚拟环境 $VENV_DIR 不存在！"
+if [ ! -x "$VENV_DIR/bin/python3" ]; then
+    echo "[error] Missing venv: $VENV_DIR" >&2
+    echo "Create it first, for example: uv venv $VENV_DIR --python 3.12" >&2
     exit 1
 fi
-source "$VENV_DIR/bin/activate"
-echo "✅ Python: $(which python3) — $(python3 --version)"
 
-echo ""
-echo "========================================"
-echo " Step 1: 安装 ROCm 计算库 (系统级别)"
-echo "========================================"
-sudo dnf install -y \
-    rocblas \
-    hipblas \
-    hipblaslt \
-    miopen \
-    rccl \
-    rocfft \
-    rocrand \
-    rocsolver \
-    rocsparse
+export PIP_CONFIG_FILE=/dev/null
+unset HSA_OVERRIDE_GFX_VERSION
 
-echo ""
-echo "========================================"
-echo " Step 2: 卸载现有的 CPU 版 PyTorch"
-echo "========================================"
-pip uninstall -y torch torchaudio 2>/dev/null || true
-echo "✅ 已卸载 CPU 版 torch/torchaudio"
+echo "[install] venv: $VENV_DIR"
+echo "[install] TheRock index: $THEROCK_INDEX_URL"
 
-echo ""
-echo "========================================"
-echo " Step 3: 安装 ROCm 版 PyTorch"
-echo "========================================"
-pip install \
-    torch==2.12.0+rocm7.1 \
-    torchaudio==2.11.0+rocm7.1 \
-    --index-url https://download.pytorch.org/whl/rocm7.1 \
-    --extra-index-url https://pypi.org/simple
+"$VENV_DIR/bin/python3" -m ensurepip --upgrade
+"$VENV_DIR/bin/python3" -m pip install --upgrade pip
+"$VENV_DIR/bin/python3" -m pip install --index-url "$THEROCK_INDEX_URL" \
+    torch torchaudio torchvision
 
-echo ""
-echo "========================================"
-echo " Step 4: 验证 GPU 检测"
-echo "========================================"
-python3 -c "
+"$VENV_DIR/bin/python3" - <<'PY'
 import torch
-print(f'PyTorch 版本: {torch.__version__}')
-print(f'CUDA 可用: {torch.cuda.is_available()}')
-if torch.cuda.is_available():
-    print(f'GPU 数量: {torch.cuda.device_count()}')
-    print(f'GPU 名称: {torch.cuda.get_device_name(0)}')
-    # 跑一个小张量计算验证
-    x = torch.randn(3, 3).cuda()
-    y = torch.mm(x, x)
-    print(f'张量计算验证: ✅ ({x.shape} @ {x.shape} = {y.shape})')
-else:
-    print('❌ GPU 不可用，请检查 ROCm 安装')
-"
 
-echo ""
-echo "========================================"
-echo " Step 5: ROCm 系统信息"
-echo "========================================"
-rocm-smi --showhw 2>/dev/null || echo "(rocm-smi 不可用)"
-
-echo ""
-echo "========================================"
-echo " 安装完成！"
-echo "========================================"
-echo ""
-echo "下一步重启 speech-to-speech 后端:"
-echo "  --stt whisper --stt_model_name large-v3 --stt_device cuda --language zh"
-echo ""
-echo "如需更轻量的中文 STT 也可用:"
-echo "  --stt paraformer"
-echo "  --stt faster-whisper --faster_whisper_stt_device cuda"
+print("PyTorch:", torch.__version__)
+print("HIP:", getattr(torch.version, "hip", None))
+print("CUDA available:", torch.cuda.is_available())
+if not torch.cuda.is_available():
+    raise SystemExit("ROCm is not available")
+print("Device:", torch.cuda.get_device_name(0))
+print("Arch:", torch.cuda.get_arch_list())
+if "rocm" not in torch.__version__:
+    raise SystemExit("Installed torch is not a ROCm build")
+if not any("gfx1151" in arch for arch in torch.cuda.get_arch_list()):
+    raise SystemExit("Installed torch does not include gfx1151")
+x = torch.randn(100, 100, device="cuda")
+y = x @ x
+torch.cuda.synchronize()
+print("Matrix mul: OK", tuple(y.shape))
+PY
