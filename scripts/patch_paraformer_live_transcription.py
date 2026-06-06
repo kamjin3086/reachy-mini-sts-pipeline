@@ -52,33 +52,37 @@ def find_installed_handler() -> Path:
 
 
 def patch_text(source: str) -> tuple[str, bool]:
-    if (
-        PATCHED_YIELD in source
-        and NEW_IMPORT in source
-        and PATCHED_PATH_STRIP in source
-        and PATCHED_AUTOMODEL in source
-    ):
+    patched = source
+
+    if OLD_YIELD in patched and PATCHED_YIELD not in patched:
+        if OLD_IMPORT not in patched and NEW_IMPORT not in patched:
+            raise RuntimeError("Could not find Paraformer messages import to patch.")
+        if NEW_IMPORT not in patched:
+            patched = patched.replace(OLD_IMPORT, NEW_IMPORT, 1)
+        patched = patched.replace(OLD_YIELD, PATCHED_YIELD, 1)
+
+    if OLD_PATH_STRIP in patched and PATCHED_PATH_STRIP not in patched:
+        patched = patched.replace(OLD_PATH_STRIP, PATCHED_PATH_STRIP, 1)
+
+    if OLD_AUTOMODEL in patched and PATCHED_AUTOMODEL not in patched:
+        patched = patched.replace(OLD_AUTOMODEL, PATCHED_AUTOMODEL, 1)
+
+    if patched != source:
+        return patched, True
+
+    if PATCHED_YIELD in source or PATCHED_PATH_STRIP in source or PATCHED_AUTOMODEL in source:
+        if PATCHED_YIELD in source and NEW_IMPORT not in source:
+            patched = patched.replace(OLD_IMPORT, NEW_IMPORT, 1)
+            return patched, patched != source
         return source, False
 
-    if OLD_IMPORT not in source and NEW_IMPORT not in source:
-        raise RuntimeError("Could not find Paraformer messages import to patch.")
-    if OLD_YIELD not in source and PATCHED_YIELD not in source:
+    if OLD_IMPORT in source:
         raise RuntimeError("Could not find final Transcription yield to patch.")
-    if OLD_PATH_STRIP not in source and PATCHED_PATH_STRIP not in source:
-        raise RuntimeError("Could not find Paraformer model path handling to patch.")
-    if OLD_AUTOMODEL not in source and PATCHED_AUTOMODEL not in source:
+    if "AutoModel(" in source:
         raise RuntimeError("Could not find Paraformer AutoModel construction to patch.")
-
-    patched = source
-    if NEW_IMPORT not in patched:
-        patched = patched.replace(OLD_IMPORT, NEW_IMPORT, 1)
-    if PATCHED_YIELD not in patched:
-        patched = patched.replace(OLD_YIELD, PATCHED_YIELD, 1)
-    if PATCHED_PATH_STRIP not in patched:
-        patched = patched.replace(OLD_PATH_STRIP, PATCHED_PATH_STRIP, 1)
-    if PATCHED_AUTOMODEL not in patched:
-        patched = patched.replace(OLD_AUTOMODEL, PATCHED_AUTOMODEL, 1)
-    return patched, patched != source
+    if "model_name.split" in source:
+        raise RuntimeError("Could not find Paraformer model path handling to patch.")
+    raise RuntimeError("No known Paraformer patch targets found.")
 
 
 def patch_file(path: Path, *, dry_run: bool = False, backup: bool = True) -> bool:

@@ -139,7 +139,11 @@ def main() -> int:
     parser.add_argument("--read-size", type=int, default=4096)
     parser.add_argument("--texts", nargs="*", default=DEFAULT_TEXTS)
     parser.add_argument("--modes", nargs="+", choices=["stream", "nonstream"], default=["stream", "nonstream"])
-    parser.add_argument("--output-dir", type=Path, default=Path("/tmp/sts_tuning/qwen3_openai_fastapi"))
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path.home() / "apps/sts-cache/bench/qwen3_openai_fastapi",
+    )
     args = parser.parse_args()
 
     run_dir = args.output_dir / time.strftime("%Y%m%d-%H%M%S")

@@ -128,17 +128,25 @@ After benchmarking **7 models**, `Gemma-4-E4B-instruct` is the steady-state TTFT
 ```bash
 git clone https://github.com/kamjin3086/reachy-mini-sts-pipeline.git
 cd reachy-mini-sts-pipeline
-$EDITOR scripts/sts_start.sh   # Adjust --model_name to a model your LLM server hosts
-./scripts/sts_start.sh
+STS_LLM_MODEL=Gemma-4-E4B-instruct ./scripts/sts_start.sh
 # → WebSocket: ws://0.0.0.0:8765/v1/realtime
+```
+
+If your LLM server or port differs, override it with environment variables instead of editing the script:
+
+```bash
+STS_LLM_BASE_URL=http://127.0.0.1:8101/v1 \
+STS_LLM_MODEL=your-model-name \
+STS_WS_PORT=8765 \
+./scripts/sts_start.sh
 ```
 
 There are only two supported launch paths:
 
 | Path | Command | Use when |
 |---|---|---|
-| Stable | `./scripts/sts_start.sh` | You want the simplest working setup |
-| Fast Qwen3-TTS | `./scripts/sts_start_qwen3_openai_fastapi_flash.sh` | You want better Qwen3-TTS runtime throughput and can accept slower warmup |
+| Stable | `make start` or `./scripts/sts_start.sh` | You want the simplest working setup |
+| Fast Qwen3-TTS | `make start-fast` or `./scripts/sts_start_qwen3_openai_fastapi_flash.sh` | You want better Qwen3-TTS runtime throughput and can accept slower warmup |
 
 Offline startup and the high-performance environment are covered in [docs/06](docs/06-runtime-paths-and-offline.zh.md).
 
@@ -163,6 +171,8 @@ Steady-state perceived latency: **~1.0 s** (user stops speaking → first synthe
 
 | Document | Purpose | When to read |
 |---|---|---|
+| [docs/SCRIPTS.zh.md](docs/SCRIPTS.zh.md) | Script index, environment-variable overrides, common Make commands | Before running or changing scripts |
+| [docs/MAINTENANCE.zh.md](docs/MAINTENANCE.zh.md) | Maintenance rules, experiment records, pre-commit checks | Before extending this repo |
 | [docs/01 — ROCm gfx1151 PyTorch Install](docs/01-rocm-gfx1151-pytorch-install.md) | ROCm 7.13 + TheRock gfx1151 wheels + PyTorch | **First-time** deployment |
 | [docs/02 — STS Pipeline Install](docs/02-speech-to-speech-install.md) | speech-to-speech installation + STT/TTS/LLM selection rationale | After doc 01 |
 | [docs/03 — Runtime Status & Tuning](docs/03-speech-to-speech-status.md) | Detailed status, tuning notes, and known issues | When debugging internals |
@@ -175,6 +185,9 @@ Steady-state perceived latency: **~1.0 s** (user stops speaking → first synthe
 ## Benchmarking
 
 ```bash
+# Common command entrypoint
+make help
+
 # End-to-end pipeline benchmark
 python3 scripts/bench_sts_pipeline.py --quick
 

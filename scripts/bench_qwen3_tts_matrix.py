@@ -2,7 +2,8 @@
 """
 Run real Qwen3-TTS Chinese instruction tests.
 
-Outputs WAV files, a CSV, and a JSON summary under /tmp/sts_tuning by default.
+Outputs WAV files, a CSV, and a JSON summary under
+~/apps/sts-cache/bench/qwen3_tts_matrix by default.
 The matrix focuses on whether inline bracket hints are spoken, and whether
 Qwen3-TTS follows the official ``instruct`` control path.
 """
@@ -269,7 +270,11 @@ def write_csv(rows: list[dict[str, Any]], path: Path) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", type=Path, default=Path("/tmp/sts_tuning"))
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path.home() / "apps/sts-cache/bench/qwen3_tts_matrix",
+    )
     parser.add_argument("--model-name", default=DEFAULT_MODEL)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--tts-language", default="chinese")

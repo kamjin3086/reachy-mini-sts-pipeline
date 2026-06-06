@@ -147,7 +147,7 @@ speech-to-speech \
     --no_enable_live_transcription
 ```
 
-脚本位置：`/home/kamjin/sts_start.sh`
+脚本位置：`scripts/sts_start.sh`
 
 ### 参数说明
 

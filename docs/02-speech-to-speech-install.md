@@ -147,7 +147,7 @@ speech-to-speech \
     --no_enable_live_transcription
 ```
 
-Script location: `/home/kamjin/sts_start.sh`
+Script location: `scripts/sts_start.sh`
 
 ### Parameter reference
 

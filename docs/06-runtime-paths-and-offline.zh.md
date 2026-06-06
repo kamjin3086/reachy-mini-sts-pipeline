@@ -8,9 +8,9 @@
 | 路径 | 命令 | 适合场景 | 代价 |
 |---|---|---|---|
 | 基础路径 | `./scripts/sts_start.sh` | 环境最简单、便于排障 | Qwen3-TTS 可能低于实时，句中偶发停顿 |
-| 高性能路径 | `./scripts/sts_start_qwen3_openai_fastapi_flash.sh` | Qwen3-TTS 运行吞吐优先 | 首次预热较慢，需要隔离 flash-attn venv |
+| 高性能路径 | `./scripts/sts_start_qwen3_openai_fastapi_flash.sh` | Qwen3-TTS 使用 flash-attn 服务路径 | 需要隔离 flash-attn venv；torch.compile 默认关闭，极限吞吐需显式打开 |
 
-不再保留“FastAPI 但不启用 flash-attn/compile”的启动入口。它比基础路径复杂，但相比高性能路径收益不够明确。
+不再保留“FastAPI 但不启用 flash-attn”的启动入口。当前高性能路径默认启用 `flash_attention_2`；`torch.compile` 因冷启动成本较高，改为显式可选。
 
 ## 离线启动
 
@@ -22,8 +22,11 @@
 | Qwen3-TTS 0.6B | `/home/kamjin/.cache/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-0.6B-CustomVoice/snapshots/85e237c12c027371202489a0ec509ded67b5e4b5` |
 | Qwen3-TTS 1.7B | `/home/kamjin/.cache/huggingface/hub/models--Qwen--Qwen3-TTS-12Hz-1.7B-CustomVoice/snapshots/0c0e3051f131929182e2c023b9537f8b1c68adfe` |
 | NLTK data | `/home/kamjin/nltk_data` |
-| Torch compile cache | `/tmp/torchinductor_${USER}` |
+| STS 持久缓存根目录 | `/home/kamjin/apps/sts-cache` |
+| Torch compile cache | `/home/kamjin/apps/sts-cache/torchinductor_${USER}` |
 | Qwen3-TTS FastAPI repo | `/home/kamjin/apps/Qwen3-TTS-Openai-Fastapi` |
+| Qwen3-TTS FastAPI home/config | `/home/kamjin/apps/sts-cache/qwen3_openai_fastapi_flash_home` |
+| flash-attn 源码 checkout | `/home/kamjin/apps/sts-cache/src/flash-attention` |
 
 本次修复的离线问题：
 
@@ -32,6 +35,7 @@
 - FunASR 启动更新检查会联网。Paraformer patch 现在传 `disable_update=True`。
 - `speech-to-speech` 检查 NLTK tagger 的目录写错，导致每次尝试下载。`scripts/patch_sts_offline_startup.py` 已修复为本地 tagger 路径。
 - 高性能脚本原本默认依赖 `/tmp/Qwen3-TTS-Openai-Fastapi`，`/tmp` 清理后会重新 clone。默认目录已改为 `/home/kamjin/apps/Qwen3-TTS-Openai-Fastapi`。
+- FastAPI home、torch.compile cache、flash-attn checkout 和 benchmark 输出默认放到 `/home/kamjin/apps/sts-cache`，避免 `/tmp` 清理后重复预热或丢失记录。
 
 ## 高性能环境
 
@@ -61,6 +65,16 @@ REINSTALL=1 ./scripts/install_qwen3_flash_attn_env.sh
 
 ## 性能结论
 
-当前设备上，原 `faster-qwen3-tts` 路径吞吐不稳定，短句也可能低于实时。高性能路径使用 `Qwen3-TTS-Openai-Fastapi + flash_attention_2 + torch.compile + CUDA graphs`，实测 Qwen3-TTS bridge 约 `RTF=1.81-1.89`，`realtime debt=0.00s`。
+当前设备上，原 `faster-qwen3-tts` 路径吞吐不稳定，短句也可能低于实时。高性能路径默认使用 `Qwen3-TTS-Openai-Fastapi + flash_attention_2`。`torch.compile` 默认关闭，因为当前 ROCm/gfx1151 上 `max-autotune` 首次预热可能持续数分钟，不适合作为日常启动默认值。
 
-首次冷启动慢是预期行为。为了运行速度，不建议关闭 `torch.compile` 或 CUDA graphs；更好的做法是保留 `TORCHINDUCTOR_CACHE_DIR` 缓存并让服务常驻。
+需要极限吞吐时可显式打开：
+
+```bash
+QWEN3_FASTAPI_USE_COMPILE=true \
+QWEN3_FASTAPI_COMPILE_MODE=reduce-overhead \
+./scripts/sts_start_qwen3_openai_fastapi_flash.sh
+```
+
+历史实测 `flash_attention_2 + torch.compile + CUDA graphs` 的 Qwen3-TTS bridge 约 `RTF=1.81-1.89`，`realtime debt=0.00s`，但冷启动体验较差。
+
+首次冷启动慢是预期行为。若启用 `torch.compile` 或 CUDA graphs，更好的做法是保留 `TORCHINDUCTOR_CACHE_DIR` 缓存并让服务常驻。

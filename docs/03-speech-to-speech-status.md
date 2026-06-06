@@ -41,7 +41,7 @@
 
 ### Start script
 
-`/home/kamjin/sts_start.sh`:
+`scripts/sts_start.sh`:
 
 ```bash
 export GPU_MAX_ALLOC_PERCENT=100
@@ -129,16 +129,16 @@ E2E steady-state perceived latency (0.97 s) breakdown:
 
 ```bash
 source /home/kamjin/apps/.venv/bin/activate
-cd /home/kamjin/scripts
+cd /home/kamjin/projects/reachy-mini-sts-pipeline
 
 # All components (1-2 test points each, ~1 min)
-python3 bench_sts_pipeline.py --quick
+python3 scripts/bench_sts_pipeline.py --quick
 
 # Single component only
-python3 bench_sts_pipeline.py --only stt
-python3 bench_sts_pipeline.py --only llm
-python3 bench_sts_pipeline.py --only tts
-python3 bench_sts_pipeline.py --only e2e
+python3 scripts/bench_sts_pipeline.py --only stt
+python3 scripts/bench_sts_pipeline.py --only llm
+python3 scripts/bench_sts_pipeline.py --only tts
+python3 scripts/bench_sts_pipeline.py --only e2e
 ```
 
 ### Full test
@@ -146,22 +146,22 @@ python3 bench_sts_pipeline.py --only e2e
 ```bash
 # STT 1/2/5/10s × 2 rounds, LLM/TTS 5 texts × 2 rounds, E2E 3 rounds
 # ~5-10 min (first run includes model loading)
-python3 bench_sts_pipeline.py
+python3 scripts/bench_sts_pipeline.py
 ```
 
 ### Script output
 
-`/home/kamjin/scripts/bench_sts_pipeline.py` outputs:
+`scripts/bench_sts_pipeline.py` outputs:
 
 - **GPU info** — PyTorch / ROCm / device / VRAM / arch
 - **STT** — Duration / Latency / RTF table
 - **LLM** — TTFT / Total / estimated tokens / tok/s table
-- **TTS** — TTFA / Total / Audio length / RTF table; saves WAVs to `/tmp/sts_bench/`
+- **TTS** — TTFA / Total / Audio length / RTF table; saves WAVs to `~/apps/sts-cache/bench/sts_bench/`
 - **E2E** — STT / LLM_TTFT / LLM_Total / TTS_TTFA / TTS_Total / E2E perceived latency table
 
 ### Validating audio quality
 
-TTS tests auto-save generated audio to `/tmp/sts_bench/tts_N.wav` — play them to evaluate quality.
+TTS tests auto-save generated audio to `~/apps/sts-cache/bench/sts_bench/tts_N.wav` — play them to evaluate quality.
 
 For real STT quality, record Chinese with `arecord` and feed the WAV into the script:
 
@@ -172,7 +172,7 @@ arecord -f S16_LE -r 16000 -d 3 test.wav
 
 ### LLM model TTFT comparison
 
-`/home/kamjin/scripts/bench_llm_models.py` measures TTFT across multiple LLM models. Use this when evaluating alternatives to `Gemma-4-E4B-instruct`.
+`scripts/bench_llm_models.py` measures TTFT across multiple LLM models. Use this when evaluating alternatives to `Gemma-4-E4B-instruct`.
 
 ---
 
@@ -467,13 +467,12 @@ All models registered in llama-swap (which delegates to lemonade) are available;
 **To switch**:
 
 ```bash
-# Edit sts_start.sh
-sed -i 's/--model_name .*/--model_name GPT-OSS-20B/' /home/kamjin/sts_start.sh
-
-# Restart the pipeline (llama-swap does not need to restart)
+# Stop the old pipeline first. llama-swap does not need to restart.
 pkill -f speech-to-speech
 sleep 2
-./sts_start.sh
+
+# Prefer an environment override instead of editing the script.
+STS_LLM_MODEL=GPT-OSS-20B ./scripts/sts_start.sh
 ```
 
 ---
@@ -499,7 +498,8 @@ ps aux | grep speech-to-speech
 speech-to-speech outputs to stdout/stderr. Recommended to redirect:
 
 ```bash
-nohup ./sts_start.sh > /tmp/sts.log 2>&1 &
+mkdir -p /home/kamjin/apps/sts-cache/logs
+nohup ./scripts/sts_start.sh > /home/kamjin/apps/sts-cache/logs/sts.log 2>&1 &
 ```
 
 ### LLM stack health check (llama-swap + lemonade)
@@ -596,7 +596,7 @@ If deepfilternet breaks but you must use numpy 2.x with torch, pick one.
 - Repository: [speech-to-speech](https://github.com/facebookresearch/speech-to-speech)
 - Install doc: [02-speech-to-speech-install.md](./02-speech-to-speech-install.md)
 - ROCm doc: [01-rocm-gfx1151-pytorch-install.md](./01-rocm-gfx1151-pytorch-install.md)
-- Benchmark scripts: `/home/kamjin/scripts/bench_sts_pipeline.py` (end-to-end), `/home/kamjin/scripts/bench_llm_models.py` (LLM TTFT comparison)
-- Start script: `/home/kamjin/sts_start.sh`
+- Benchmark scripts: `scripts/bench_sts_pipeline.py` (end-to-end), `scripts/bench_llm_models.py` (LLM TTFT comparison)
+- Start script: `scripts/sts_start.sh`
 - llama-swap (proxy): `http://127.0.0.1:8101/v1`
 - lemonade (inference backend): AMD TheRock + Vulkan paths

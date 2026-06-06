@@ -41,7 +41,7 @@
 
 ### 启动脚本
 
-`/home/kamjin/sts_start.sh`：
+`scripts/sts_start.sh`：
 
 ```bash
 export GPU_MAX_ALLOC_PERCENT=100
@@ -129,16 +129,16 @@ E2E 稳态感知延迟 (0.97s) 分解:
 
 ```bash
 source /home/kamjin/apps/.venv/bin/activate
-cd /home/kamjin/scripts
+cd /home/kamjin/projects/reachy-mini-sts-pipeline
 
 # 全部组件（每个 1-2 个测试点，约 1 分钟）
-python3 bench_sts_pipeline.py --quick
+python3 scripts/bench_sts_pipeline.py --quick
 
 # 只测单个组件
-python3 bench_sts_pipeline.py --only stt
-python3 bench_sts_pipeline.py --only llm
-python3 bench_sts_pipeline.py --only tts
-python3 bench_sts_pipeline.py --only e2e
+python3 scripts/bench_sts_pipeline.py --only stt
+python3 scripts/bench_sts_pipeline.py --only llm
+python3 scripts/bench_sts_pipeline.py --only tts
+python3 scripts/bench_sts_pipeline.py --only e2e
 ```
 
 ### 完整测试
@@ -146,22 +146,22 @@ python3 bench_sts_pipeline.py --only e2e
 ```bash
 # STT 1/2/5/10s × 2 轮，LLM/TTS 5 文本 × 2 轮，E2E 3 轮
 # 约 5-10 分钟（首次含模型加载）
-python3 bench_sts_pipeline.py
+python3 scripts/bench_sts_pipeline.py
 ```
 
 ### 脚本功能
 
-`/home/kamjin/scripts/bench_sts_pipeline.py` 输出：
+`scripts/bench_sts_pipeline.py` 输出：
 
 - **GPU 信息** — PyTorch / ROCm / 设备 / VRAM / 架构
 - **STT** — Duration / Latency / RTF 表
 - **LLM** — TTFT / Total / 估算 Token / tok/s 表
-- **TTS** — TTFA / Total / Audio 长度 / RTF 表，保存 WAV 到 `/tmp/sts_bench/`
+- **TTS** — TTFA / Total / Audio 长度 / RTF 表，保存 WAV 到 `~/apps/sts-cache/bench/sts_bench/`
 - **E2E** — STT / LLM_TTFT / LLM_Total / TTS_TTFA / TTS_Total / E2E 感知延迟表
 
 ### 验证语音质量
 
-TTS 测试自动保存生成的音频到 `/tmp/sts_bench/tts_N.wav`，可直接播放听感。
+TTS 测试自动保存生成的音频到 `~/apps/sts-cache/bench/sts_bench/tts_N.wav`，可直接播放听感。
 
 要测 STT 真实效果，可用 `arecord` 录一段中文，再用脚本喂入：
 
@@ -462,13 +462,12 @@ llama-swap 注册的全部模型（转给 lemonade 推理）都可用，编辑 `
 **修改方法**：
 
 ```bash
-# 编辑 sts_start.sh
-sed -i 's/--model_name .*/--model_name GPT-OSS-20B/' /home/kamjin/sts_start.sh
-
-# 重启 pipeline（llama-swap 不用重启）
+# 先停旧 pipeline。llama-swap 不用重启。
 pkill -f speech-to-speech
 sleep 2
-./sts_start.sh
+
+# 优先用环境变量覆盖，不直接改脚本。
+STS_LLM_MODEL=GPT-OSS-20B ./scripts/sts_start.sh
 ```
 
 ---
@@ -494,7 +493,8 @@ ps aux | grep speech-to-speech
 speech-to-speech 本身输出到 stdout/stderr。建议重定向：
 
 ```bash
-nohup ./sts_start.sh > /tmp/sts.log 2>&1 &
+mkdir -p /home/kamjin/apps/sts-cache/logs
+nohup ./scripts/sts_start.sh > /home/kamjin/apps/sts-cache/logs/sts.log 2>&1 &
 ```
 
 ### LLM 栈健康检查（llama-swap + lemonade）
@@ -591,7 +591,7 @@ python3 -c "from df.enhance import init_df; init_df()"
 - 仓库：[speech-to-speech](https://github.com/facebookresearch/speech-to-speech)
 - 安装文档：[02-speech-to-speech-install.md](./02-speech-to-speech-install.md)
 - ROCm 文档：[01-rocm-gfx1151-pytorch-install.md](./01-rocm-gfx1151-pytorch-install.md)
-- 测试脚本：`/home/kamjin/scripts/bench_sts_pipeline.py`（端到端）、`/home/kamjin/scripts/bench_llm_models.py`（LLM TTFT 对比）
-- 启动脚本：`/home/kamjin/sts_start.sh`
+- 测试脚本：`scripts/bench_sts_pipeline.py`（端到端）、`scripts/bench_llm_models.py`（LLM TTFT 对比）
+- 启动脚本：`scripts/sts_start.sh`
 - llama-swap（代理）: `http://127.0.0.1:8101/v1`
 - lemonade（推理后端）: AMD TheRock + Vulkan 路径

@@ -1,5 +1,13 @@
 #!/bin/bash
-# Speech-to-Speech pipeline: paraformer (STT) + responses-api (LLM) + qwen3 (TTS)
+# Stable Speech-to-Speech pipeline:
+# paraformer (STT) + responses-api (LLM) + qwen3 (TTS).
+#
+# Common overrides:
+#   STS_LLM_BASE_URL=http://127.0.0.1:8101/v1
+#   STS_LLM_MODEL=Gemma-4-E4B-instruct
+#   STS_WS_HOST=0.0.0.0
+#   STS_WS_PORT=8765
+#   STS_KILL_PORT=1   # opt in to killing an existing process on STS_WS_PORT
 # GPU: AMD Radeon 8060S (gfx1151) via ROCm 7.13
 # STT: FunASR Paraformer-zh (中文优化, CER~1.95%, 120x 实时)
 # TTS: faster-qwen3-tts (ROCm 已实测 gfx1151 可用)
@@ -84,33 +92,42 @@ INIT_CHAT_PROMPT=${INIT_CHAT_PROMPT:-"你是 Reachy Mini 的中文语音助手�
 check_and_free_port() {
     local port=$1
     local pid
-    pid=$(lsof -ti :$port 2>/dev/null)
+    pid=$(lsof -ti :"$port" 2>/dev/null)
     if [ -n "$pid" ]; then
-        echo "[port-check] Port $port is in use (PID: $pid), killing..."
-        kill -9 $pid 2>/dev/null
-        sleep 1
-        # 二次确认
-        pid=$(lsof -ti :$port 2>/dev/null)
-        if [ -n "$pid" ]; then
-            echo "[port-check] Port $port still occupied (PID: $pid), force killing..."
+        if [ "${STS_KILL_PORT:-0}" = "1" ]; then
+            echo "[port-check] Port $port is in use (PID: $pid), killing because STS_KILL_PORT=1..."
             kill -9 $pid 2>/dev/null
             sleep 1
+            pid=$(lsof -ti :"$port" 2>/dev/null)
+            if [ -n "$pid" ]; then
+                echo "[port-check] Port $port is still occupied (PID: $pid)." >&2
+                return 1
+            fi
+            echo "[port-check] Port $port is now free."
+        else
+            echo "[port-check] Port $port is in use (PID: $pid)." >&2
+            echo "[port-check] Stop that process, choose STS_WS_PORT, or set STS_KILL_PORT=1." >&2
+            return 1
         fi
-        echo "[port-check] Port $port is now free."
     else
         echo "[port-check] Port $port is free."
     fi
 }
 
-check_and_free_port 8765
+STS_LLM_BASE_URL=${STS_LLM_BASE_URL:-http://127.0.0.1:8101/v1}
+STS_LLM_MODEL=${STS_LLM_MODEL:-Gemma-4-E4B-instruct}
+STS_WS_HOST=${STS_WS_HOST:-0.0.0.0}
+STS_WS_PORT=${STS_WS_PORT:-8765}
+
+check_and_free_port "$STS_WS_PORT" || exit 1
 
 # 各组件的 warmup（STT 模型加载、LLM 首请求、TTS CUDA graph 编译）
 # 由 speech-to-speech CLI 内部自动完成，无需外部预热
 speech-to-speech \
-    --responses_api_base_url "http://127.0.0.1:8101/v1" \
+    --responses_api_base_url "$STS_LLM_BASE_URL" \
     --responses_api_api_key "" \
     --mode realtime \
-    --model_name Gemma-4-E4B-instruct \
+    --model_name "$STS_LLM_MODEL" \
     --llm_backend responses-api \
     --responses_api_stream \
     --responses_api_disable_thinking \
@@ -126,8 +143,8 @@ speech-to-speech \
     --qwen3_tts_streaming_chunk_size 12 \
     --qwen3_tts_max_new_tokens 128 \
     --qwen3_tts_blocksize 512 \
-    --ws_host 0.0.0.0 \
-    --ws_port 8765 \
+    --ws_host "$STS_WS_HOST" \
+    --ws_port "$STS_WS_PORT" \
     --stt paraformer \
     --paraformer_stt_model_name "$PARAFORMER_STT_MODEL_NAME" \
     --language zh \

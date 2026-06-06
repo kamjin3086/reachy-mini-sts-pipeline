@@ -208,7 +208,11 @@ async def run(args: argparse.Namespace) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--url", default="ws://127.0.0.1:8765/v1/realtime")
-    parser.add_argument("--output-dir", type=Path, default=Path("/tmp/sts_tuning/realtime"))
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path.home() / "apps/sts-cache/bench/realtime",
+    )
     parser.add_argument("--voice", default="Serena")
     parser.add_argument("--instructions", default=INSTRUCTIONS)
     parser.add_argument("--timeout", type=float, default=60.0)

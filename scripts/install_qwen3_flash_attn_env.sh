@@ -14,7 +14,8 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." 2>/dev/null && pwd)"
 
 SOURCE_VENV=${SOURCE_VENV:-/home/kamjin/apps/.venv}
 TARGET_VENV=${TARGET_VENV:-/home/kamjin/apps/.venv-qwen3-fa}
-FLASH_ATTN_DIR=${FLASH_ATTN_DIR:-/tmp/flash-attention}
+STS_CACHE_DIR=${STS_CACHE_DIR:-/home/kamjin/apps/sts-cache}
+FLASH_ATTN_DIR=${FLASH_ATTN_DIR:-$STS_CACHE_DIR/src/flash-attention}
 FLASH_ATTN_REF=${FLASH_ATTN_REF:-bc58abc67bdd6470d6500414e08441b95708453f}
 FLASH_AITER_REF=${FLASH_AITER_REF:-9bab8388c35936814a659b4ebd245c491e1b940a}
 QWEN3_OPENAI_FASTAPI_DIR=${QWEN3_OPENAI_FASTAPI_DIR:-/home/kamjin/apps/Qwen3-TTS-Openai-Fastapi}
@@ -142,8 +143,9 @@ prepare_fastapi_repo() {
 }
 
 write_snapshot() {
-    local out="$TARGET_VENV/qwen3_flash_attn_env_snapshot.txt"
+    local out="$STS_CACHE_DIR/qwen3_flash_attn_env_snapshot.txt"
     log "Writing environment snapshot: $out"
+    mkdir -p "$(dirname "$out")"
     {
         echo "SOURCE_VENV=$SOURCE_VENV"
         echo "TARGET_VENV=$TARGET_VENV"

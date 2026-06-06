@@ -10,7 +10,7 @@ Speech-to-Speech Pipeline 性能测试脚本
 
 使用方法：
     source /home/kamjin/apps/.venv/bin/activate
-    python3 /home/kamjin/scripts/bench_sts_pipeline.py [--quick]
+    python3 scripts/bench_sts_pipeline.py [--quick]
 """
 
 import argparse
@@ -221,7 +221,11 @@ def bench_llm(prompts: List[str], n_runs: int = 2):
 # ============================================================================
 # 3. TTS 性能测试
 # ============================================================================
-def bench_tts(texts: List[str], n_runs: int = 2, output_dir: str = "/tmp/sts_bench"):
+def bench_tts(
+    texts: List[str],
+    n_runs: int = 2,
+    output_dir: str = str(Path.home() / "apps/sts-cache/bench/sts_bench"),
+):
     banner("TTS (Qwen3) 性能测试")
 
     from speech_to_speech.TTS.qwen3_tts_handler import Qwen3TTSHandler

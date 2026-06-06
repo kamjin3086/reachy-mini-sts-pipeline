@@ -128,17 +128,25 @@ uv pip install "deepfilternet==0.5.6"
 ```bash
 git clone https://github.com/kamjin3086/reachy-mini-sts-pipeline.git
 cd reachy-mini-sts-pipeline
-$EDITOR scripts/sts_start.sh   # 把 --model_name 改成你 LLM server 提供的模型
-./scripts/sts_start.sh
+STS_LLM_MODEL=Gemma-4-E4B-instruct ./scripts/sts_start.sh
 # → WebSocket: ws://0.0.0.0:8765/v1/realtime
+```
+
+如果你的 LLM server 或端口不同，用环境变量覆盖，不需要直接改脚本：
+
+```bash
+STS_LLM_BASE_URL=http://127.0.0.1:8101/v1 \
+STS_LLM_MODEL=你的模型名 \
+STS_WS_PORT=8765 \
+./scripts/sts_start.sh
 ```
 
 当前只保留两条启动路径：
 
 | 路径 | 命令 | 适合场景 |
 |---|---|---|
-| 稳定路径 | `./scripts/sts_start.sh` | 需要最简单、最容易排障的可用方案 |
-| 高性能 Qwen3-TTS | `./scripts/sts_start_qwen3_openai_fastapi_flash.sh` | 需要更好的 Qwen3-TTS 运行吞吐，能接受较慢预热 |
+| 稳定路径 | `make start` 或 `./scripts/sts_start.sh` | 需要最简单、最容易排障的可用方案 |
+| 高性能 Qwen3-TTS | `make start-fast` 或 `./scripts/sts_start_qwen3_openai_fastapi_flash.sh` | 需要更好的 Qwen3-TTS 运行吞吐，能接受较慢预热 |
 
 离线启动和高性能环境说明见 [docs/06](docs/06-runtime-paths-and-offline.zh.md)。
 
@@ -163,6 +171,8 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1    # AOTriton 性能
 
 | 文档 | 用途 | 何时读 |
 |---|---|---|
+| [docs/SCRIPTS.zh.md](docs/SCRIPTS.zh.md) | 脚本索引、环境变量覆盖、常用 Make 命令 | 准备运行或改脚本前 |
+| [docs/MAINTENANCE.zh.md](docs/MAINTENANCE.zh.md) | 后续记录、实验升级/废弃、提交前检查规范 | 准备继续维护或写新记录时 |
 | [docs/01-rocm-gfx1151-pytorch-install.md](docs/01-rocm-gfx1151-pytorch-install.md) | ROCm 7.13 + TheRock gfx1151 wheels + PyTorch 安装 | **第一次**部署必读 |
 | [docs/02-speech-to-speech-install.md](docs/02-speech-to-speech-install.md) | speech-to-speech 管道安装 + 选型对比（STT/TTS/LLM） | 看完 01 后 |
 | [docs/03-speech-to-speech-status.md](docs/03-speech-to-speech-status.md) | 详细状态、调优记录和已知问题 | 排查内部问题时 |
@@ -175,6 +185,9 @@ export TORCH_ROCM_AOTRITON_ENABLE_EXPERIMENTAL=1    # AOTriton 性能
 ## 性能测试
 
 ```bash
+# 常用命令入口
+make help
+
 # 端到端 benchmark
 python3 scripts/bench_sts_pipeline.py --quick
 

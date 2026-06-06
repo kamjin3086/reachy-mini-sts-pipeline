@@ -217,7 +217,11 @@ def write_csv(rows: list[dict[str, Any]], path: Path) -> None:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output-dir", type=Path, default=Path("/tmp/sts_tuning/qwen3_realtime_perf"))
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path.home() / "apps/sts-cache/bench/qwen3_realtime_perf",
+    )
     parser.add_argument("--model-name", default=DEFAULT_MODEL)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--tts-language", default="chinese")
